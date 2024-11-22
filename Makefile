@@ -8,6 +8,8 @@ ERLC_FLAGS= +debug_info +compressed  -I deps
 
 BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
 TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
+APP_SRC=$(wildcard src/*.app.src)
+APP_TARGET=ebin/yaws_appmod_router.app
 
 REBAR3_URL=https://s3.amazonaws.com/rebar3/rebar3
 WGET=$(shell which wget)
@@ -15,17 +17,24 @@ CURL=$(shell which curl)
 
 .PHONY: all old test clean
 all: rebar3 compile
-old: old-get-deps $(BEAM)
+old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET)
 test: $(TBEAM) unit
 
+ensure_ebin:
+	@mkdir -p ebin
+
+ebin/yaws_appmod_router.app: src/yaws_appmod_router.app.src
+	@mkdir -p ebin
+	cp $< $@
+
 unit:
-	erl -noshell -pa ./ebin -pa ./deps/yaws/ebin -s test_yaws_appmod_router test -s init stop
+	erl -noshell -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin -s test_yaws_appmod_router test -s init stop
 
 %.beam: %.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
 clean:
-	rm -f ebin/*.beam
+	rm -f ebin/*.beam ebin/*.app
 	rm -rf _build
 
 # -----------------------
@@ -62,7 +71,8 @@ yaws-dep:
 	if [ ! -d deps/yaws ]; then \
 	  cd deps; \
 	  git clone https://github.com/erlyaws/yaws.git; \
-	  make -C yaws; \
+	  cd yaws; \
+	  rebar3 compile; \
 	fi
 
 rm-deps:
