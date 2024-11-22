@@ -4,7 +4,7 @@ ERLC_USE_SERVER ?= true
 export ERLC_USE_SERVER
 
 ERLC=erlc
-ERLC_FLAGS= +debug_info +compressed 
+ERLC_FLAGS= +debug_info +compressed  -I deps
 
 BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
 TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
@@ -19,7 +19,7 @@ old: old-get-deps $(BEAM)
 test: $(TBEAM) unit
 
 unit:
-	erl -noshell  -s test_yaws_appmod_router test -s init stop
+	erl -noshell -pa ./ebin -pa ./deps/yaws/ebin -s test_yaws_appmod_router test -s init stop
 
 %.beam: %.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
@@ -31,7 +31,7 @@ clean:
 # -----------------------
 # D E P E N D E N C I E S
 # -----------------------
-.PHONY: compile get-deps old_deps yaws_record-dep rm-deps
+.PHONY: compile get-deps old_deps yaws-dep rm-deps
 
 ifeq ($(REBAR3),)
 REBAR3=./rebar3
@@ -43,7 +43,7 @@ compile:
 
 get-deps: rebar3 old_deps 
 
-old-get-deps: old_deps yaws_record-dep
+old-get-deps: old_deps yaws-dep
 
 ifeq ($(WGET),)
 rebar3:
@@ -58,7 +58,7 @@ old_deps:
 	  mkdir deps; \
 	fi
 
-yaws_record-dep:
+yaws-dep:
 	if [ ! -d deps/yaws ]; then \
 	  cd deps; \
 	  git clone https://github.com/erlyaws/yaws.git; \

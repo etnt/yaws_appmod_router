@@ -1,14 +1,20 @@
 {application, yaws_appmod_router,
  [{description, "A Yaws appmod router"},
   {vsn, "0.1.0"},
-  {registered, []},
+  {registered, [yaws_appmod_router_server]},
+  {mod, {yaws_appmod_router_app, []}},
   {applications,
    [kernel,
     stdlib,
     yaws
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [
+    yaws_appmod_router,
+    yaws_appmod_router_app,
+    yaws_appmod_router_sup,
+    yaws_appmod_router_server
+  ]},
   {licenses, ["Apache 2.0"]},
   {links, []}
  ]}.

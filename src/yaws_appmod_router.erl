@@ -19,24 +19,26 @@
     middlewares = []
 }).
 
+-define(TABLE_NAME, yaws_appmod_routes).
+
 %% Initialize router state
 init() ->
-    erlang:put(routes, []).
+    % Start the router server if not already started
+    case whereis(yaws_appmod_router_server) of
+        undefined ->
+            {ok, _} = yaws_appmod_router_server:start_link();
+        _ ->
+            ok
+    end.
 
 %% Add a new route to the router
 add_route(Method, PathPattern, Handler, Middlewares) ->
-    Route = #route{
-        method = Method,
-        path_pattern = PathPattern,
-        handler = Handler,
-        middlewares = Middlewares
-    },
-    Routes = erlang:get(routes),
-    erlang:put(routes, [Route | Routes]).
+    yaws_appmod_router_server:add_route(Method, PathPattern, Handler, Middlewares).
 
 %% Find matching routes for a request
 find_route(Method, Path) ->
-    Routes = erlang:get(routes),
+    % Direct access to the ETS table for reading
+    Routes = [Route || {route, Route} <- ets:tab2list(?TABLE_NAME)],
     lists:filter(
         fun(#route{method = M, path_pattern = PP}) ->
             M =:= Method andalso match_path(PP, Path)
