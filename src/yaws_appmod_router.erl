@@ -5,7 +5,7 @@
     find_route/2,
     match_path/2,
     execute_middlewares/2,
-    appmod/2
+    out/1
 ]).
 
 -include_lib("yaws/include/yaws.hrl").
@@ -32,7 +32,8 @@ init() ->
     end.
 
 %% Add a new route to the router
-add_route(Method, PathPattern, Handler, Middlewares) ->
+add_route(Method, PathPattern, Handler, Middlewares)
+    when is_function(Handler, 1) andalso is_list(Middlewares) ->
     yaws_appmod_router_server:add_route(Method, PathPattern, Handler, Middlewares).
 
 %% Find matching routes for a request
@@ -75,10 +76,10 @@ execute_middlewares([Middleware | Rest], Req) ->
     end.
 
 %% Main appmod entry point
-appmod(Req, _State) ->
+out(Req) ->
     Method = atom_to_list((Req#arg.req)#http_request.method),
-    Path = Req#arg.pathinfo,
-    
+    Path = Req#arg.server_path,
+
     case find_route(Method, Path) of
         [#route{handler = Handler, middlewares = Middlewares} | _] ->
             case execute_middlewares(Middlewares, Req) of

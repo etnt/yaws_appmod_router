@@ -5,8 +5,7 @@
   {mod, {yaws_appmod_router_app, []}},
   {applications,
    [kernel,
-    stdlib,
-    yaws
+    stdlib
    ]},
   {env,[]},
   {modules, [

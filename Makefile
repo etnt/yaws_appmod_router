@@ -8,6 +8,7 @@ ERLC_FLAGS= +debug_info +compressed  -I deps
 
 BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
 TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
+XBEAM=$(patsubst %.erl,%.beam,$(wildcard examples/*.erl))
 APP_SRC=$(wildcard src/*.app.src)
 APP_TARGET=ebin/yaws_appmod_router.app
 
@@ -17,8 +18,9 @@ CURL=$(shell which curl)
 
 .PHONY: all old test clean
 all: rebar3 compile
-old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET)
+old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET) examples
 test: $(TBEAM) unit
+examples: $(XBEAM)
 
 ensure_ebin:
 	@mkdir -p ebin
@@ -29,6 +31,10 @@ ebin/yaws_appmod_router.app: src/yaws_appmod_router.app.src
 
 unit:
 	erl -noshell -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin -s test_yaws_appmod_router test -s init stop
+
+.PHONY: shell
+shell:
+	erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin 
 
 %.beam: %.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<

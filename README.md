@@ -1,19 +1,8 @@
 # yaws_appmod_router
 > A simple Yaws appmod that routes requests.
 
-## Sketch
 
-To implement a routing capability for the Erlang Yaws web server, you can create a
-custom appmod that provides an intuitive API for specifying routes and their
-associated handlers. The design will include path pattern matching, middleware
- execution, and a mechanism to handle the responses.
-
-The aim is a modular design that allows you to easily add new routes,
-handlers, and middleware while keeping the Yaws appmod simple and reusable.
-
-Here’s how you can design and implement such a routing appmod:
-
-### Define the Router API
+Implements a routing capability for the Erlang Yaws web server as an appmod.
 
 The router should allow:
 
@@ -29,156 +18,66 @@ my_router:add_route("GET", "/hello", fun my_handler:hello/1).
 my_router:add_route("POST", "/submit", fun my_handler:submit/1, [auth_middleware]).
 ```
 
-### Core Components
+## Simple Example
 
-1. __Route Matching__: Use pattern matching to compare incoming requests against a list of registered routes.
+First compile everything by running: `make old`
 
-2. __Middleware Support__: Allow optional middleware functions to process requests before reaching the route handler.
-
-3. __Dynamic Path Segments__: Allow capturing dynamic segments like /user/:id.
-
-### Implementation
-
-Here’s a step-by-step implementation in Erlang.
-
-1. Router State
-
-The router will maintain a state with registered routes. Each route can have:
-
-* HTTP method.
-* Path pattern.
-* Handler function.
-* Middleware functions.
-
-Define the state as:
+Have a look at the `examples/simple.erl`, the important bits are:
 
 ```erlang
--record(route, {
-    method :: atom(),
-    path_pattern :: string(),
-    handler :: fun(),
-    middlewares :: [fun()]
-}).
+-module(simple).
+-export([start/0]).
+-export([root/1
+        , hello/1]).
 
-%% The state will hold a list of routes
--define(STATE, []).
+%% Start Yaws in embedded mode with appmod configuration
+start() ->
+    ...setup Yaws...
 
--module(my_router).
--export([init/0, add_route/4, appmod/2]).
+    yaws_appmod_router:init(),
+    yaws_appmod_router:add_route("GET", "/", fun simple:root/1, []),
+    yaws_appmod_router:add_route("GET", "/hello", fun simple:hello/1, []),
+
+    ...configure Yaws...
+
+    ok.
+
+%% Appmod handler function
+root(_Arg) ->
+    {content, "text/plain", "This is the '/' route !"}.
+
+hello(_Arg) ->
+    {content, "text/plain", "Hello this is the '/hello' route !"}.
 ```
 
-2. Router Initialization
+Now start our server:
 
-Set up a state for storing routes.
-
-```erlang
-init() ->
-    erlang:put(routes, ?STATE).
+```bash
+# Start the simple example
+$ make shell
+1> simple:start().
+Yaws server started on port 8080 
 ```
 
-3. Add Route Function
+Make some requests, using Curl:
 
-Add routes to the state.
+```bash
+$ curl -is "http://127.0.0.1:8080/"
+HTTP/1.1 200 OK
+Server: Yaws 2.2.0
+Date: Sat, 23 Nov 2024 00:05:29 GMT
+Content-Length: 23
+Content-Type: text/plain
 
-```erlang
-add_route(Method, PathPattern, Handler, Middlewares) ->
-    Route = #route{
-        method = Method,
-        path_pattern = PathPattern,
-        handler = Handler,
-        middlewares = Middlewares
-    },
-    Routes = erlang:get(routes),
-    erlang:put(routes, [Route | Routes]).
-```
+This is the '/' route !
 
-4. Route Matching
 
-Match an incoming request to the appropriate route using path pattern matching.
+$ curl -is "http://127.0.0.1:8080/hello"
+HTTP/1.1 200 OK
+Server: Yaws 2.2.0
+Date: Sat, 23 Nov 2024 00:05:36 GMT
+Content-Length: 34
+Content-Type: text/plain
 
- ```erlang
- find_route(Method, Path) ->
-    Routes = erlang:get(routes),
-    lists:filter(
-      fun(#route{method = Method, path_pattern = PathPattern} = Route) ->
-          match_path(PathPattern, Path)
-      end,
-      Routes).
-
-match_path(PathPattern, Path) ->
-    %% Example: match "/user/:id" with "/user/123"
-    SegmentsPattern = string:split(PathPattern, "/"),
-    SegmentsPath = string:split(Path, "/"),
-    length(SegmentsPattern) == length(SegmentsPath) andalso
-    lists:all(fun match_segment/2, lists:zip(SegmentsPattern, SegmentsPath)).
-
-match_segment(":" ++ _, _) -> true;
-match_segment(Seg, Seg) -> true;
-match_segment(_, _) -> false.
-```
-
-5. Middleware Execution
-
-Execute middleware functions in sequence before invoking the handler.
-
- ```erlang
- execute_middlewares([], Req) -> {ok, Req};
-execute_middlewares([MW | Rest], Req) ->
-    case MW(Req) of
-        {ok, Req1} -> execute_middlewares(Rest, Req1);
-        {error, Reason} -> {error, Reason}
-    end.
-```
-
-6. Appmod Callback
-
-Define the appmod callback to handle requests.
-
-```erlang
-appmod(Req, State) ->
-    case find_route(Req#arg.method, Req#arg.path) of
-        [#route{handler = Handler, middlewares = Middlewares}] ->
-            case execute_middlewares(Middlewares, Req) of
-                {ok, UpdatedReq} ->
-                    Handler(UpdatedReq);
-                {error, Reason} ->
-                    {html, io_lib:format("<h1>Error: ~p</h1>", [Reason])}
-            end;
-        [] ->
-            {html, "<h1>404 Not Found</h1>"}
-    end.
-```
-
-### Example Handler
-
-Handlers process requests and return responses.
-
-```erlang
--module(my_handler).
--export([hello/1, submit/1]).
-
-hello(Req) ->
-    {ok, Name} = yaws_api:parse_query_param(Req, "name"),
-    {html, io_lib:format("Hello, ~s!", [Name])}.
-
-submit(Req) ->
-    {ok, Body} = yaws_api:read_body(Req),
-    {html, io_lib:format("Received: ~p", [Body])}.
-```
-
-### Example Middleware
-
-Middlewares preprocess requests.
-
-```erlang
--module(auth_middleware).
--export([auth/1]).
-
-auth(Req) ->
-    case yaws_api:get_header("authorization", Req) of
-        undefined ->
-            {error, "Unauthorized"};
-        Auth ->
-            {ok, Req#arg{headers = [{auth, Auth} | Req#arg.headers]}}
-    end.
+Hello this is the '/hello' route !
 ```
