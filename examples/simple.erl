@@ -1,9 +1,13 @@
 -module(simple).
 -export([start/0]).
 -export([root/1
-        , hello/1]).
+        , hello/1
+        , user/1]).
 
-%% Start Yaws in embedded mode with appmod configuration
+-include_lib("yaws/include/yaws.hrl").
+-include_lib("yaws/include/yaws_api.hrl").
+
+%% Start Yaws in embedded mode with appmod configurationo
 start() ->
     setup_yaws(),
     {ok, _} = application:ensure_all_started([yaws, yaws_appmod_router]),
@@ -11,6 +15,7 @@ start() ->
 
     yaws_appmod_router:add_route("GET", "/", fun simple:root/1, []),
     yaws_appmod_router:add_route("GET", "/hello", fun simple:hello/1, []),
+    yaws_appmod_router:add_route("GET", "/user/:id", fun simple:user/1, []),
 
     Id = "embedded_yaws",
     GconfList = [{id, Id}],
@@ -46,3 +51,9 @@ root(_Arg) ->
 hello(_Arg) ->
     {content, "text/plain", "Hello this is the '/hello' route !"}.
 
+%% Handler demonstrating parameter extraction
+user(Arg) ->
+    Params = Arg#arg.appmoddata,
+    UserId = maps:get(id, Params),
+    {content, "text/plain", 
+     io_lib:format("Hello user ~s! This is your profile page.", [UserId])}.

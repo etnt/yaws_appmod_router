@@ -19,16 +19,11 @@
 
 -include_lib("yaws/include/yaws.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
+-include("yaws_appmod_router.hrl").
 
 -define(TABLE_NAME, yaws_appmod_routes).
 
-%% Records
--record(route, {
-    method,
-    path_pattern,
-    handler,
-    middlewares = []
-}).
+
 
 %% API functions
 start_link() ->

@@ -2,25 +2,17 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("yaws/include/yaws.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
-
-%% Records
--record(route, {
-    method,
-    path_pattern,
-    handler,
-    middlewares = []
-}).
+-include("yaws_appmod_router.hrl").
 
 -define(TABLE_NAME, yaws_appmod_routes).
 
 %% Test Fixtures
 setup() ->
-    {ok, _} = application:ensure_all_started([yaws, yaws_appmod_router]),
+    {ok, _} = application:ensure_all_started([yaws_appmod_router]),
     yaws_appmod_router:init().
 
 cleanup(_) ->
-    application:stop(yaws_appmod_router),
-    application:stop(yaws).
+    application:stop(yaws_appmod_router).
 
 %% Mock Functions
 mock_handler(_Req) ->
@@ -30,14 +22,15 @@ mock_middleware(Req) ->
     {ok, Req#arg{headers = [{test_middleware, passed} | Req#arg.headers]}}.
 
 failing_middleware(_Req) ->
-    {error, "Middleware Failed"}.
+    {error, {html, "<h1>Error: Middleware Failed</h1>"}}.
 
 %% Helper function to create test requests
 make_request(Method, Path) ->
     #arg{
         req = #http_request{method = list_to_atom(Method)},
         headers = [],
-        pathinfo = Path
+        appmoddata = undefined,
+        server_path = Path
     }.
 
 %% Test Cases
@@ -72,14 +65,35 @@ route_matching_test_() ->
             ?assertMatch(#route{path_pattern = "/exact"}, Match)
         end},
 
-        {"Matches dynamic segments", fun() ->
+        {"Matches dynamic segments with params", fun() ->
             yaws_appmod_router:add_route(
                 "GET", "/user/:id", fun mock_handler/1, []
             ),
             % Give gen_server time to process
             timer:sleep(100),
             [Match] = yaws_appmod_router:find_route("GET", "/user/123"),
-            ?assertMatch(#route{path_pattern = "/user/:id"}, Match)
+            ?assertMatch(
+                #route{path_pattern = "/user/:id", params = #{id := "123"}},
+                Match
+            )
+        end},
+
+        {"Matches multiple dynamic segments", fun() ->
+            yaws_appmod_router:add_route(
+                "GET", "/user/:id/post/:post_id", fun mock_handler/1, []
+            ),
+            % Give gen_server time to process
+            timer:sleep(100),
+            [Match] = yaws_appmod_router:find_route(
+                "GET", "/user/123/post/456"
+            ),
+            ?assertMatch(
+                #route{
+                    path_pattern = "/user/:id/post/:post_id",
+                    params = #{id := "123", post_id := "456"}
+                },
+                Match
+            )
         end},
 
         {"No match for non-existent route", fun() ->
@@ -120,7 +134,7 @@ middleware_test_() ->
             Middlewares = [fun failing_middleware/1, fun mock_middleware/1],
             Req = make_request("GET", "/test"),
             ?assertEqual(
-                {error, "Middleware Failed"},
+                {error, {html, "<h1>Error: Middleware Failed</h1>"}},
                 yaws_appmod_router:execute_middlewares(Middlewares, Req)
             )
         end},
@@ -145,7 +159,7 @@ appmod_handling_test_() ->
             Req = make_request("GET", "/test"),
             ?assertEqual(
                 {html, "Hello Test"},
-                yaws_appmod_router:appmod(Req, undefined)
+                yaws_appmod_router:out(Req)
             )
         end},
 
@@ -153,7 +167,7 @@ appmod_handling_test_() ->
             Req = make_request("GET", "/unknown"),
             ?assertEqual(
                 {html, "<h1>404 Not Found</h1>"},
-                yaws_appmod_router:appmod(Req, undefined)
+                yaws_appmod_router:out(Req)
             )
         end},
 
@@ -169,7 +183,28 @@ appmod_handling_test_() ->
             Req = make_request("GET", "/protected"),
             ?assertEqual(
                 {html, "<h1>Error: Middleware Failed</h1>"},
-                yaws_appmod_router:appmod(Req, undefined)
+                yaws_appmod_router:out(Req)
+            )
+        end},
+
+        {"Route parameters are passed to handler", fun() ->
+            ParamHandler = fun(Arg) ->
+                Params = Arg#arg.appmoddata,
+                UserId = maps:get(id, Params),
+                {content, "text/plain", UserId}
+            end,
+            yaws_appmod_router:add_route(
+                "GET",
+                "/user/:id",
+                ParamHandler,
+                []
+            ),
+            % Give gen_server time to process
+            timer:sleep(100),
+            Req = make_request("GET", "/user/123"),
+            ?assertEqual(
+                {content, "text/plain", "123"},
+                yaws_appmod_router:out(Req)
             )
         end}
     ]}.
@@ -177,13 +212,21 @@ appmod_handling_test_() ->
 path_matching_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
         {"Matches simple static paths", fun() ->
-            ?assert(yaws_appmod_router:match_path("/test", "/test")),
-            ?assertNot(yaws_appmod_router:match_path("/test", "/other"))
+            ?assertMatch(
+                {true, #{}}, yaws_appmod_router:match_path("/test", "/test")
+            ),
+            ?assertEqual(
+                false, yaws_appmod_router:match_path("/test", "/other")
+            )
         end},
 
         {"Matches paths with dynamic segments", fun() ->
-            ?assert(yaws_appmod_router:match_path("/user/:id", "/user/123")),
-            ?assert(
+            ?assertMatch(
+                {true, #{id := "123"}},
+                yaws_appmod_router:match_path("/user/:id", "/user/123")
+            ),
+            ?assertMatch(
+                {true, #{id := "456", cid := "789"}},
                 yaws_appmod_router:match_path(
                     "/post/:id/comment/:cid",
                     "/post/456/comment/789"
@@ -192,10 +235,12 @@ path_matching_test_() ->
         end},
 
         {"Fails on segment count mismatch", fun() ->
-            ?assertNot(
+            ?assertEqual(
+                false,
                 yaws_appmod_router:match_path("/user/:id", "/user/123/extra")
             ),
-            ?assertNot(
+            ?assertEqual(
+                false,
                 yaws_appmod_router:match_path("/user/:id/profile", "/user/123")
             )
         end}

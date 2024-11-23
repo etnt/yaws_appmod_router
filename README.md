@@ -37,6 +37,7 @@ start() ->
     yaws_appmod_router:init(),
     yaws_appmod_router:add_route("GET", "/", fun simple:root/1, []),
     yaws_appmod_router:add_route("GET", "/hello", fun simple:hello/1, []),
+    yaws_appmod_router:add_route("GET", "/user/:id", fun simple:user/1, []),
 
     ...configure Yaws...
 
@@ -48,6 +49,12 @@ root(_Arg) ->
 
 hello(_Arg) ->
     {content, "text/plain", "Hello this is the '/hello' route !"}.
+
+user(Arg) ->
+    Params = Arg#arg.appmoddata,
+    UserId = maps:get(id, Params),
+    {content, "text/plain", 
+     io_lib:format("Hello user ~s! This is your profile page.", [UserId])}.
 ```
 
 Now start our server:
@@ -62,6 +69,7 @@ Yaws server started on port 8080
 Make some requests, using Curl:
 
 ```bash
+# Request 1
 $ curl -is "http://127.0.0.1:8080/"
 HTTP/1.1 200 OK
 Server: Yaws 2.2.0
@@ -72,6 +80,7 @@ Content-Type: text/plain
 This is the '/' route !
 
 
+# Request 2
 $ curl -is "http://127.0.0.1:8080/hello"
 HTTP/1.1 200 OK
 Server: Yaws 2.2.0
@@ -80,4 +89,15 @@ Content-Length: 34
 Content-Type: text/plain
 
 Hello this is the '/hello' route !
+
+
+# Request 3
+$ curl -is "http://127.0.0.1:8080/user/bill"
+HTTP/1.1 200 OK
+Server: Yaws 2.2.0
+Date: Sat, 23 Nov 2024 21:36:18 GMT
+Content-Length: 43
+Content-Type: text/plain
+
+Hello user bill! This is your profile page.
 ```

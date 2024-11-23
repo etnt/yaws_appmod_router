@@ -10,14 +10,9 @@
 
 -include_lib("yaws/include/yaws.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
+-include("yaws_appmod_router.hrl").
 
-%% Records
--record(route, {
-    method,
-    path_pattern,
-    handler,
-    middlewares = []
-}).
+
 
 -define(TABLE_NAME, yaws_appmod_routes).
 
@@ -40,9 +35,18 @@ add_route(Method, PathPattern, Handler, Middlewares)
 find_route(Method, Path) ->
     % Direct access to the ETS table for reading
     Routes = [Route || {route, Route} <- ets:tab2list(?TABLE_NAME)],
-    lists:filter(
-        fun(#route{method = M, path_pattern = PP}) ->
-            M =:= Method andalso match_path(PP, Path)
+    io:format("Routes: ~p~n", [Routes]),
+    lists:filtermap(
+        fun(#route{method = M, path_pattern = PP} = Route) ->
+            case M =:= Method of
+                true ->
+                    case match_path(PP, Path) of
+                        {true, Params} -> {true, Route#route{params = Params}};
+                        false -> false
+                    end;
+                false -> 
+                    false
+            end
         end,
         Routes
     ).
@@ -52,18 +56,18 @@ match_path(Pattern, Path) ->
     PatternSegments = string:split(Pattern, "/", all),
     PathSegments = string:split(Path, "/", all),
     case length(PatternSegments) =:= length(PathSegments) of
-        true -> match_segments(PatternSegments, PathSegments);
+        true -> match_segments(PatternSegments, PathSegments, #{});
         false -> false
     end.
 
-%% Match individual path segments
-match_segments([], []) ->
-    true;
-match_segments([[$: | _] | RestPattern], [_ | RestPath]) ->
-    match_segments(RestPattern, RestPath);
-match_segments([Same | RestPattern], [Same | RestPath]) ->
-    match_segments(RestPattern, RestPath);
-match_segments(_, _) ->
+%% Match individual path segments and build params map
+match_segments([], [], Params) ->
+    {true, Params};
+match_segments([[$: | ParamName] | RestPattern], [Value | RestPath], Params) ->
+    match_segments(RestPattern, RestPath, Params#{list_to_atom(ParamName) => Value});
+match_segments([Same | RestPattern], [Same | RestPath], Params) ->
+    match_segments(RestPattern, RestPath, Params);
+match_segments(_, _, _) ->
     false.
 
 %% Execute middleware chain
@@ -81,12 +85,12 @@ out(Req) ->
     Path = Req#arg.server_path,
 
     case find_route(Method, Path) of
-        [#route{handler = Handler, middlewares = Middlewares} | _] ->
-            case execute_middlewares(Middlewares, Req) of
+        [#route{handler = Handler, middlewares = Middlewares, params = Params} | _] ->
+            case execute_middlewares(Middlewares, Req#arg{appmoddata = Params}) of
                 {ok, UpdatedReq} ->
                     Handler(UpdatedReq);
                 {error, Reason} ->
-                    {html, io_lib:format("<h1>Error: ~p</h1>", [Reason])}
+                    Reason
             end;
         [] ->
             {html, "<h1>404 Not Found</h1>"}

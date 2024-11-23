@@ -4,7 +4,7 @@ ERLC_USE_SERVER ?= true
 export ERLC_USE_SERVER
 
 ERLC=erlc
-ERLC_FLAGS= +debug_info +compressed  -I deps
+ERLC_FLAGS= +debug_info +compressed  -I deps -I include
 
 BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
 TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
