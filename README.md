@@ -101,3 +101,82 @@ Content-Type: text/plain
 
 Hello user bill! This is your profile page.
 ```
+
+## Example, using Middleware for authentication
+
+Let us extend the simple example with a middleware that checks for valid
+Basic Authentication credentials.
+
+```erlang
+start() ->
+    ...code here as before...
+
+    yaws_appmod_router:add_route("GET", "/login", fun simple:login/1, [
+        fun simple:auth_middleware/1
+    ]),
+
+    ...code here as before...
+
+%% Here comes some new code...
+%%
+%% Our authentication middleware checks for valid credentials
+%% of a user with username "bill" and password "qwe123".
+%% If the credentials are valid, the middleware adds a flag to the opaque
+%% map of the request, indicating that the user is authenticated.
+%% If the credentials are invalid, the middleware returns an error response.
+%% which will cause the request to be terminated.
+auth_middleware(Arg) ->
+    Auth = yaws_api:headers_authorization(yaws_api:arg_headers(Arg)),
+    case Auth of
+        {"bill", "qwe123", _Orig} ->
+            %% Add authenticated flag to opaque
+            NewArg = update_opaque(Arg, authenticated, true),
+            {ok, NewArg};
+        Else ->
+            unauthorized_response(Else)
+    end.
+
+unauthorized_response(_Else) ->
+    Status = {status, 401},
+    Headers = [{header, ["WWW-Authenticate: Basic realm=\"My Server\""]}],
+    Html = "<html><body><h1>Authentication Failed</h1><p>Please provide valid credentials.</p></body></html>",
+    {error, [Status | Headers] ++ [{content, "text/html", Html}]}.
+
+update_opaque(#arg{opaque = OpaqueMap} = Arg, Key, Value) when is_map(OpaqueMap) ->
+    Arg#arg{opaque = maps:put(Key, Value, OpaqueMap)}.
+
+%% Protected login route
+login(Arg) ->
+    case maps:get(authenticated, Arg#arg.opaque, false) of
+        true ->
+            {content, "text/html",
+                "<html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>"};
+        _ ->
+            {content, "text/html",
+                "<html><body><h1>Error</h1><p>Authentication required.</p></body></html>"}
+    end.
+```
+
+Start the server as before and then make some requests:
+
+```bash
+$ curl -is -u bill:asdf "http://127.0.0.1:8080/login"
+HTTP/1.1 401 Unauthorized
+Server: Yaws 2.2.0
+Date: Sun, 24 Nov 2024 09:21:37 GMT
+Content-Length: 96
+Content-Type: text/html
+WWW-Authenticate: Basic realm="My Server"
+
+<html><body><h1>Authentication Failed</h1><p>Please provide valid credentials.</p></body></html>
+
+
+$ curl -is -u bill:qwe123 "http://127.0.0.1:8080/login"
+HTTP/1.1 200 OK
+Server: Yaws 2.2.0
+Date: Sun, 24 Nov 2024 09:21:46 GMT
+Content-Length: 86
+Content-Type: text/html
+
+<html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>
+```

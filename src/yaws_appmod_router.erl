@@ -35,7 +35,6 @@ add_route(Method, PathPattern, Handler, Middlewares)
 find_route(Method, Path) ->
     % Direct access to the ETS table for reading
     Routes = [Route || {route, Route} <- ets:tab2list(?TABLE_NAME)],
-    io:format("Routes: ~p~n", [Routes]),
     lists:filtermap(
         fun(#route{method = M, path_pattern = PP} = Route) ->
             case M =:= Method of
