@@ -2,12 +2,13 @@
 
 [global target_host=localhost]
 [global target_port=8080]
+[global eprompt=\d+>\s]
 
-[timeout 300]
+#[timeout 300]
 
 [shell start_server]
-    !make SHELL
-    ?1>
+    !erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
     !advanced_routing:start().
     ?"Advanced routing server started on port 8080
 
@@ -18,10 +19,9 @@
     ?Content-Type: application/json
     ?Access-Control-Allow-Origin: *
     ?{"status":"ok"
+    ?SH-PROMPT:
+
 
 [shell start_server]
     !init:stop().
-
-[cleanup]
-    !echo "Goodbye"
-
+    ?SH-PROMPT:

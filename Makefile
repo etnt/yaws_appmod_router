@@ -32,8 +32,8 @@ ebin/yaws_appmod_router.app: src/yaws_appmod_router.app.src
 unit:
 	erl -noshell -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin -s test_yaws_appmod_router test -s init stop
 
-.PHONY: shell
-shell:
+.PHONY: starti
+starti:
 	erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin 
 
 %.beam: %.erl

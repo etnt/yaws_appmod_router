@@ -107,12 +107,13 @@ setup_server() ->
 
 %% Middleware implementations
 cors_middleware(Arg) ->
-    Headers = [
-        {header, {access_control_allow_origin, "*"}},
-        {header, {access_control_allow_methods, "GET, POST, PUT, DELETE, OPTIONS"}},
-        {header, {access_control_allow_headers, "Content-Type"}}
+    Hdrs = maps:get(headers, Arg#arg.opaque, []),
+    NewHdrs = [
+        {header, {"Access-Control-Allow-Origin", "*"}},
+        {header, {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"}},
+        {header, {"Access-Control-Allow-Headers", "Content-Type"}}
     ],
-    {ok, Arg#arg{opaque = maps:put(cors_headers, Headers, Arg#arg.opaque)}}.
+    {ok, Arg#arg{opaque = maps:put(headers, NewHdrs ++ Hdrs, Arg#arg.opaque)}}.
 
 json_middleware(Arg) ->
     Headers = [{header, {content_type, "application/json"}}],
@@ -147,17 +148,19 @@ validate_user_middleware(Arg) ->
 logger_middleware(Arg) ->
     Method = (Arg#arg.req)#http_request.method,
     Path = Arg#arg.server_path,
-    io:format("[~p] ~p ~p~n", [calendar:local_time(), Method, Path]),
+    TS = calendar:system_time_to_rfc3339(erlang:system_time(second)),
+    io:format("<~s> ~p ~p~n", [TS, Method, Path]),
     {ok, Arg}.
 
 %% Route handlers
-api_status(_Arg) ->
+api_status(#arg{opaque = OpaqueMap} = _Arg) ->
+    Hdrs = maps:get(cors_headers, OpaqueMap, []),
     Response = #{
         status => <<"ok">>,
-        version => <<"1.0.0">>,
-        timestamp => calendar:local_time()
+        version => <<"1.0.0">>
     },
-    {content, "application/json", jsx:encode(Response)}.
+    [{status,200} | Hdrs] ++
+    [{content, "application/json", json:encode(Response)}].
 
 get_users(Arg) ->
     % Example query parameter handling
