@@ -121,17 +121,21 @@ json_middleware(Arg) ->
 
 rate_limit_middleware(Arg) ->
     % Simple rate limiting example - could be enhanced with proper storage
-    case erlang:get(request_count) of
-        undefined ->
-            erlang:put(request_count, 1),
-            {ok, Arg};
+    QueryParams = yaws_api:parse_query(Arg),
+    RC = proplists:get_value("request-counter", QueryParams, "1"),
+
+    try list_to_integer(RC) of
         Count when Count > 100 ->
-            {error, [{status, 429}, {content, "application/json", 
-                "{\"error\": \"Too many requests. Please try again later.\"}"
-            }]};
-        Count ->
-            erlang:put(request_count, Count + 1),
+            {error, [{status, 429},
+                     {content, "application/json",
+                      "{\"error\": \"Too many requests. Please try again later.\"}" }]};
+        _ ->
             {ok, Arg}
+    catch
+        _:_ ->
+            {error, [{status, 400},
+                     {content, "application/json",
+                      "{\"error\": \"Malformed request-counter param\"}"}]}
     end.
 
 validate_user_middleware(Arg) ->
@@ -162,32 +166,29 @@ api_status(#arg{opaque = OpaqueMap} = _Arg) ->
     [{status,200} | Hdrs] ++
     [{content, "application/json", json:encode(Response)}].
 
-get_users(Arg) ->
-    % Example query parameter handling
-    QueryParams = yaws_api:parse_query(Arg),
-    Limit = proplists:get_value("limit", QueryParams, "10"),
-
+get_users(#arg{opaque = OpaqueMap} = _Arg) ->
+    Hdrs = maps:get(headers, OpaqueMap, []),
     Users = [
         #{id => 1, name => <<"John">>, email => <<"john@example.com">>},
         #{id => 2, name => <<"Jane">>, email => <<"jane@example.com">>}
     ],
-
-    {content, "application/json", jsx:encode(#{
+    [{status,200} | Hdrs] ++
+    [{content, "application/json",
+      json:encode(#{
         users => Users,
-        limit => list_to_integer(Limit),
         total => length(Users)
-    })}.
+      })}].
 
 create_user(Arg) ->
     % Example request body handling
     case yaws_api:parse_post(Arg) of
         {ok, Data} ->
-            {content, "application/json", jsx:encode(#{
+            {content, "application/json", json:encode(#{
                 message => <<"User created successfully">>,
                 data => Data
             })};
         {error, Error} ->
-            {content, "application/json", jsx:encode(#{
+            {content, "application/json", json:encode(#{
                 error => Error
             })}
     end.
@@ -201,7 +202,7 @@ get_user_posts(Arg) ->
         #{id => 2, title => <<"Second Post">>, user_id => UserId}
     ],
 
-    {content, "application/json", jsx:encode(#{
+    {content, "application/json", json:encode(#{
         user_id => UserId,
         posts => Posts
     })}.
@@ -210,7 +211,7 @@ create_user_post(Arg) ->
     Params = Arg#arg.appmoddata,
     UserId = maps:get(user_id, Params),
 
-    {content, "application/json", jsx:encode(#{
+    {content, "application/json", json:encode(#{
         message => <<"Post created successfully">>,
         user_id => UserId
     })}.
@@ -219,7 +220,7 @@ update_user(Arg) ->
     Params = Arg#arg.appmoddata,
     UserId = maps:get(id, Params),
 
-    {content, "application/json", jsx:encode(#{
+    {content, "application/json", json:encode(#{
         message => <<"User updated successfully">>,
         user_id => UserId
     })}.
@@ -228,7 +229,7 @@ delete_user(Arg) ->
     Params = Arg#arg.appmoddata,
     UserId = maps:get(id, Params),
 
-    {content, "application/json", jsx:encode(#{
+    {content, "application/json", json:encode(#{
         message => <<"User deleted successfully">>,
         user_id => UserId
     })}.
