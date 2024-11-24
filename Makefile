@@ -19,7 +19,7 @@ CURL=$(shell which curl)
 .PHONY: all old test clean
 all: rebar3 compile
 old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET) examples
-test: $(TBEAM) unit
+test: $(TBEAM) unit lux_test
 examples: $(XBEAM)
 
 ensure_ebin:
@@ -43,6 +43,11 @@ clean:
 	rm -f ebin/*.beam ebin/*.app
 	rm -rf _build
 
+.PHONY: lux_test
+lux_test:
+	./deps/lux/bin/lux --shell_cmd `which bash` --timeout 2  ./test/tmp.lux
+# ./deps/lux/bin/lux --shell_cmd `which bash` --timeout 2 ./test/test_advanced_routing.lux
+
 # -----------------------
 # D E P E N D E N C I E S
 # -----------------------
@@ -58,7 +63,7 @@ compile:
 
 get-deps: rebar3 old_deps 
 
-old-get-deps: old_deps yaws-dep
+old-get-deps: old_deps yaws-dep lux-dep
 
 ifeq ($(WGET),)
 rebar3:
@@ -79,6 +84,16 @@ yaws-dep:
 	  git clone https://github.com/erlyaws/yaws.git; \
 	  cd yaws; \
 	  rebar3 compile; \
+	fi
+
+lux-dep:
+	if [ ! -d deps/lux ]; then \
+	  cd deps; \
+	  git clone https://github.com/hawk/lux.git; \
+	  cd lux; \
+	  autoconf; \
+	  ./configure; \
+	  make; \
 	fi
 
 rm-deps:

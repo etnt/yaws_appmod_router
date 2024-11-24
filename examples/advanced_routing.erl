@@ -102,7 +102,7 @@ setup_server() ->
 
     [supervisor:start_child(yaws_sup, Ch) || Ch <- ChildSpecs],
     ok = yaws_api:setconf(GC, SCList),
-    io:format("Advanced routing server started on port 8080~n"),
+    io:format("Advanced routing server started on port 8080~n",[]),
     ok.
 
 %% Middleware implementations

@@ -1,0 +1,27 @@
+[doc Test advanced routing endpoints]
+
+[global target_host=localhost]
+[global target_port=8080]
+
+[timeout 300]
+
+[shell start_server]
+    !make SHELL
+    ?1>
+    !advanced_routing:start().
+    ?"Advanced routing server started on port 8080
+
+# Test API Status endpoint
+[shell test_api_status]
+    !curl -is -X GET http://$target_host:$target_port/api/status
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?Access-Control-Allow-Origin: *
+    ?{"status":"ok"
+
+[shell start_server]
+    !init:stop().
+
+[cleanup]
+    !echo "Goodbye"
+
