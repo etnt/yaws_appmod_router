@@ -21,6 +21,10 @@
 -include_lib("yaws/include/yaws.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
 
+-define(PORT, 8080).
+-define(HOST, "localhost").
+
+
 start() ->
     setup_yaws(),
     {ok, _} = application:ensure_all_started([yaws, yaws_appmod_router]),
@@ -89,7 +93,7 @@ setup_server() ->
     GconfList = [{id, Id}],
     Docroot = "/tmp",
     SconfList = [
-        {port, 8080},
+        {port, ?PORT},
         {servername, "advanced_server"},
         {listen, {127, 0, 0, 1}},
         {docroot, Docroot},
@@ -179,18 +183,24 @@ get_users(#arg{opaque = OpaqueMap} = _Arg) ->
         total => length(Users)
       })}].
 
-create_user(Arg) ->
+%% Example request: curl -is -X POST -d 'user=bill'  http://localhost:8080/api/users
+create_user(#arg{opaque = OpaqueMap} = Arg) ->
     % Example request body handling
     case yaws_api:parse_post(Arg) of
-        {ok, Data} ->
-            {content, "application/json", json:encode(#{
+        [{"user",User}] ->
+            Hdrs = maps:get(headers, OpaqueMap, []),
+            Location = {"Location", "http://"++?HOST++":"++integer_to_list(?PORT)++"/api/users/"++User},
+            [{status,200},
+             {header, Location} | Hdrs] ++
+            [{content, "application/json", json:encode(#{
                 message => <<"User created successfully">>,
-                data => Data
-            })};
+                user => list_to_binary(User)
+            })}];
         {error, Error} ->
-            {content, "application/json", json:encode(#{
+            [{status, 400},
+             {content, "application/json", json:encode(#{
                 error => Error
-            })}
+             })}]
     end.
 
 get_user_posts(Arg) ->
