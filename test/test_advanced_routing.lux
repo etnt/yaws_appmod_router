@@ -1,0 +1,107 @@
+[doc Test advanced routing endpoints]
+
+[global target_host=localhost]
+[global target_port=8080]
+[global eprompt=\d+>\s]
+
+[shell start_server]
+    !erl -pa ../ebin -pa ../deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
+    !advanced_routing:start().
+    ?Advanced routing server started on port 8080
+
+# Test API Status endpoint
+[shell test_api_status]
+    !curl -i -X GET http://$target_host:$target_port/api/status
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?Access-Control-Allow-Origin: *
+    ?{"status":"ok"
+
+# Test GET users endpoint
+[shell test_get_users]
+    # Test without limit parameter
+    !curl -i -X GET http://$target_host:$target_port/api/users
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"users":.*John.*Jane.*
+
+    # Test with limit parameter
+    !curl -i -X GET "http://$target_host:$target_port/api/users?limit=5"
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"limit":5.*
+
+# Test POST user endpoint
+[shell test_create_user]
+    ~curl -is -X POST
+    ~ -H "Content-Type: application/json"
+    ~ -d '{"user":"bill","email":"bill@example.com"}'
+    ! http://$target_host:$target_port/api/users
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{"message":"User created successfully"
+
+# Test GET single user endpoint
+[shell test_get_user]
+    !curl -i -X GET http://$target_host:$target_port/api/users/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"user_id":"bill".*
+
+# Test PUT user endpoint
+[shell test_update_user]
+    ~curl -i -X PUT 
+    ~     -H "Content-Type: application/json" 
+    ~     -d '{"name":"Updated User"}' 
+    !     http://$target_host:$target_port/api/users/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{"message":"User updated successfully"
+
+# Test DELETE user endpoint
+[shell test_delete_user]
+    !curl -i -X DELETE http://$target_host:$target_port/api/users/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{"message":"User deleted successfully"
+
+# Test nested routes - GET user posts
+[shell test_get_user_posts]
+    !curl -i -X GET http://$target_host:$target_port/api/users/bill/posts
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"user_id":"bill".*
+
+# Test nested routes - POST user post
+[shell test_create_user_post]
+    ~curl -i -X POST
+    ~ -H "Content-Type: application/json"
+    ~ -d '{"title":"Test Post","content":"Test Content"}'
+    ! http://$target_host:$target_port/api/users/bill/posts
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{"message":"Post created successfully".*"title":"Test.*
+
+# Test OPTIONS
+[shell test_cors]
+    ~curl -i -X OPTIONS
+    ! http://$target_host:$target_port/api/users
+    ?HTTP/1.1 200 OK
+    ?Allow: GET, POST, PUT, PATCH, DELETE, OPTIONS
+
+# Test CORS pre-flight request
+[shell test_cors]
+    ~curl -i -X OPTIONS
+    ~ -H "Origin: http://example.com"
+    ~ -H "Access-Control-Request-Method: POST"
+    ! http://$target_host:$target_port/api/users
+    ?HTTP/1.1 200 OK
+    ?Access-Control-Allow-Origin: \*
+    ?Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+
+
+[shell start_server]
+    !init:stop().
+
+[cleanup]

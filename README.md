@@ -22,7 +22,7 @@ my_router:add_route("POST", "/submit", fun my_handler:submit/1, [auth_middleware
 
 First compile everything by running: `make old`
 
-Have a look at the `examples/simple.erl`, the important bits are:
+Have a look at the [simple example](./examples/simple.erl), the important bits are:
 
 ```erlang
 -module(simple).
@@ -179,4 +179,103 @@ Content-Length: 86
 Content-Type: text/html
 
 <html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>
+```
+
+## More examples
+
+For more examples have a look at the [advanced routing](./examples/advanced_routing.erl) example.
+
+## CRUD routes
+
+An alternative to specify each HTTP method we can make use of
+the `CRUD` specification. This way we can specify just a single route
+and the **yaws_appmod_router** will automatically indicate the appropriate
+action by setting the key `action` in the `appmoddata` map.
+
+The `CRUD` string is interpreted as the four operations:
+Create, Read, Update and Delete. Each letter can be omitted
+to indicate what actions is not supported for that path.
+
+The following table shows the supported CRUD actions.
+
+| **CRUD**  | **Path**        | **Method**   | **Action** |
+|-----------|-----------------|--------------|------------|
+| (R)ead    | `/users`        | GET          | index      |
+|           | `/users/:id`    | GET          | show       |
+| (C)reate  | `/users`        | POST         | create     |
+| (U)pdate  | `/users/:id`    | PUT          | replace    |
+|           | `/users/:id`    | PATCH        | modify     |
+| (D)elete  | `/users/:id`    | DELETE       | delete     |
+
+See also the [CRUD routing](./examples/crud_routing.erl) example.
+
+```erlang
+%% Example 1: Full CRUD specification
+add_route("CRUD", "/api/users", fun mymod:handle_users/1, [Middlewares...]).
+
+handle_users(#arg{appmoddata = Map} = Arg) ->
+    case maps:get(action, Map) of
+        index   -> get_users(Arg);
+        show    -> get_user(Arg);
+        create  -> create_user(Arg);
+        replace -> replace_user(Arg);
+        modify  -> modify_user(Arg);
+        delete  -> delete_user(Arg);
+        _       -> method_not_allowed(Arg)
+    end.
+
+
+%% Example 2: Only a CD specification
+add_route("CD", "/api/person", fun mymod:handle_person/1, [Middlewares...]).
+
+handle_person(#arg{appmoddata = Map} = Arg) ->
+    case maps:get(action, Map) of
+        create -> create_person(Arg);
+        delete -> delete_person(Arg);
+        _      -> method_not_allowed(Arg)
+    end.
+```
+
+When using a CRUD route specification, **yaws_appmod_router** will automatically
+answer to `OPTIONS` requests and return the allowed methods for the given route.
+
+```bash
+$ curl -is -X OPTIONS  http://localhost:8080/api/users
+HTTP/1.1 204 No Content
+Server: Yaws 2.2.0
+Date: Tue, 26 Nov 2024 19:57:08 GMT
+Allow: POST, GET, PUT, PATCH, DELETE, OPTIONS
+```
+
+A CORS preflight request:
+
+```bash
+$ curl -is -X OPTIONS -H 'Access-Control-Request-Method: POST'  http://localhost:8080/api/users
+HTTP/1.1 200 OK
+Server: Yaws 2.2.0
+Date: Tue, 26 Nov 2024 22:41:12 GMT
+Content-Type: text/html 
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+```
+
+From an Erlang shell we can print the route table:
+
+```erlang
+1> yaws_appmod_router:print_routes().
+METHOD   PATH PATTERN                             CRUD  ACTION    HANDLER
+------   ------------                             ----  ------    -------
+GET      /api/semaphores                          CRD   index     fun crud_routing:handle_semaphores/1
+OPTIONS  /api/semaphores                          CRD   options   undefined
+POST     /api/semaphores                          CRD   create    fun crud_routing:handle_semaphores/1
+DELETE   /api/semaphores/:id                      CRD   delete    fun crud_routing:handle_semaphores/1
+GET      /api/semaphores/:id                      CRD   show      fun crud_routing:handle_semaphores/1
+GET      /api/workers                             CRUD  index     fun crud_routing:handle_workers/1
+OPTIONS  /api/workers                             CRUD  options   undefined
+POST     /api/workers                             CRUD  create    fun crud_routing:handle_workers/1
+DELETE   /api/workers/:id                         CRUD  delete    fun crud_routing:handle_workers/1
+GET      /api/workers/:id                         CRUD  show      fun crud_routing:handle_workers/1
+PATCH    /api/workers/:id                         CRUD  modify    fun crud_routing:handle_workers/1
+PUT      /api/workers/:id                         CRUD  replace   fun crud_routing:handle_workers/1
+ok
 ```

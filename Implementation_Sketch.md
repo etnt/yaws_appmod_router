@@ -29,6 +29,56 @@ my_router:add_route("GET", "/hello", fun my_handler:hello/1).
 my_router:add_route("POST", "/submit", fun my_handler:submit/1, [auth_middleware]).
 ```
 
+### CRUD routes
+
+An alternative to specify each HTTP method we can make use of
+the `CRUD` specification. This way we can specify just a single route
+and the **yaws_appmod_router** will automatically indicate the appropriate
+action by setting the key `action` in the `appmoddata` map.
+
+The `CRUD` string is interpreted as the four operations:
+Create, Read, Update and Delete. Each letter can be omitted
+to indicate what actions is not supported for that path.
+
+The following table shows the supported CRUD actions.
+
+| **CRUD**  | **Path**        | **Method**   | **Action** |
+|-----------|-----------------|--------------|------------|
+| (R)ead    | `/users`        | GET          | index      |
+|           | `/users/:id`    | GET          | show       |
+| (C)reate  | `/users`        | POST         | create     |
+| (U)pdate  | `/users/:id`    | PUT          | replace    |
+|           | `/users/:id`    | PATCH        | modify     |
+| (D)elete  | `/users/:id`    | DELETE       | delete     |
+
+
+```erlang
+%% Example 1: Full CRUD specification
+add_route("CRUD", "/api/users", fun mymod:handle_users/1, [Middlewares...]).
+
+handle_users(#arg{appmoddata = Map} = Arg) ->
+    case maps:get(action, Map) of
+        index   -> get_users(Arg);
+        show    -> get_user(Arg);
+        create  -> create_user(Arg);
+        replace -> replace_user(Arg);
+        modify  -> modify_user(Arg);
+        delete  -> delete_user(Arg);
+        _       -> method_not_allowed(Arg)
+    end.
+
+
+%% Example 2: Only a CD specification
+add_route("CD", "/api/person", fun mymod:handle_person/1, [Middlewares...]).
+
+handle_person(#arg{appmoddata = Map} = Arg) ->
+    case maps:get(action, Map) of
+        create -> create_person(Arg);
+        delete -> delete_person(Arg);
+        _      -> method_not_allowed(Arg)
+    end.
+```
+
 ### Core Components
 
 1. __Route Matching__: Use pattern matching to compare incoming requests against a list of registered routes.

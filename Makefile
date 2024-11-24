@@ -6,9 +6,9 @@ export ERLC_USE_SERVER
 ERLC=erlc
 ERLC_FLAGS= +debug_info +compressed  -I deps -I include
 
-BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
-TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
-XBEAM=$(patsubst %.erl,%.beam,$(wildcard examples/*.erl))
+BEAM=$(patsubst src/%.erl,ebin/%.beam,$(wildcard src/*.erl))
+TBEAM=$(patsubst test/%.erl,ebin/%.beam,$(wildcard test/*.erl))
+XBEAM=$(patsubst examples/%.erl,ebin/%.beam,$(wildcard examples/*.erl))
 APP_SRC=$(wildcard src/*.app.src)
 APP_TARGET=ebin/yaws_appmod_router.app
 
@@ -19,7 +19,7 @@ CURL=$(shell which curl)
 .PHONY: all old test clean
 all: rebar3 compile
 old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET) examples
-test: $(TBEAM) unit
+test: $(TBEAM) unit lux_test
 examples: $(XBEAM)
 
 ensure_ebin:
@@ -32,16 +32,28 @@ ebin/yaws_appmod_router.app: src/yaws_appmod_router.app.src
 unit:
 	erl -noshell -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin -s test_yaws_appmod_router test -s init stop
 
-.PHONY: shell
-shell:
+.PHONY: starti
+starti:
 	erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin 
 
-%.beam: %.erl
+ebin/%.beam: src/%.erl | ensure_ebin
+	$(ERLC) $(ERLC_FLAGS) -o ebin $<
+
+ebin/%.beam: test/%.erl | ensure_ebin
+	$(ERLC) $(ERLC_FLAGS) -o ebin $<
+
+ebin/%.beam: examples/%.erl | ensure_ebin
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
 clean:
 	rm -f ebin/*.beam ebin/*.app
 	rm -rf _build
+
+.PHONY: lux_test
+lux_test:
+	#(cd test; ../deps/lux/bin/lux tmp.lux)
+	(cd test; ../deps/lux/bin/lux test_crud_routing.lux)
+	(cd test; ../deps/lux/bin/lux test_advanced_routing.lux)
 
 # -----------------------
 # D E P E N D E N C I E S
@@ -58,7 +70,7 @@ compile:
 
 get-deps: rebar3 old_deps 
 
-old-get-deps: old_deps yaws-dep
+old-get-deps: old_deps yaws-dep lux-dep
 
 ifeq ($(WGET),)
 rebar3:
@@ -79,6 +91,16 @@ yaws-dep:
 	  git clone https://github.com/erlyaws/yaws.git; \
 	  cd yaws; \
 	  rebar3 compile; \
+	fi
+
+lux-dep:
+	if [ ! -d deps/lux ]; then \
+	  cd deps; \
+	  git clone https://github.com/hawk/lux.git; \
+	  cd lux; \
+	  autoconf; \
+	  ./configure; \
+	  make; \
 	fi
 
 rm-deps:

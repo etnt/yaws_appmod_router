@@ -1,0 +1,28 @@
+[doc Test advanced routing endpoints]
+
+[global target_host=localhost]
+[global target_port=8080]
+[global eprompt=\d+>\s]
+
+
+[newshell server]
+    !erl -pa ../ebin -pa ../deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
+    !advanced_routing:start().
+    ?Advanced routing server started on port 8080
+
+# Test API Status endpoint
+[newshell test-api-status]
+    !curl -is -X GET http://$target_host:$target_port/api/status
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?Access-Control-Allow-Origin: *
+    ?{"status":"ok"
+    ?SH-PROMPT:
+
+
+[shell server]
+    !init:stop().
+    ?SH-PROMPT:
+
+[cleanup]

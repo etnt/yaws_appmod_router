@@ -1,0 +1,79 @@
+[doc Test CRUD routing endpoints]
+
+[global target_host=localhost]
+[global target_port=8080]
+[global eprompt=\d+>\s]
+
+[shell start_server]
+    !erl -pa ../ebin -pa ../deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
+    !crud_routing:start().
+    ?CRUD routing server started on port 8080
+
+
+# Test GET workers endpoint
+[shell test_get_workers]
+    !curl -is -X GET http://$target_host:$target_port/api/workers
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"workers":.*John.*Jane.*
+
+
+# Test POST worker endpoint
+[shell test_create_worker]
+    !curl -is -X POST -H "Content-Type:application/json" -d '{"worker":"bill","email":"bill@example.com"}' http://$target_host:$target_port/api/workers
+    ?HTTP/1.1 201 Created
+    ?Location: http://localhost:8080/api/workers/bill
+    ?Content-Type: application/json
+    ?{"worker":"bill".*
+
+# Test GET single worker endpoint
+[shell test_get_worker]
+    !curl -i -X GET http://$target_host:$target_port/api/workers/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"worker":"bill".*
+
+# Test PUT worker endpoint
+[shell test_update_worker]
+    ~curl -i -X PUT 
+    ~     -H "Content-Type: application/json" 
+    ~     -d '{"worker":"bill","email":"bill@acme.com"}'
+    !     http://$target_host:$target_port/api/workers/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"email":"bill@acme.com".*
+
+# Test PATCH worker endpoint
+[shell test_update_worker]
+    ~curl -i -X PUT 
+    ~     -H "Content-Type: application/json" 
+    ~     -d '{"worker":"bill","email":"bill@fubar.com"}'
+    !     http://$target_host:$target_port/api/workers/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"email":"bill@fubar.com".*
+
+# Test DELETE worker endpoint
+[shell test_delete_worker]
+    !curl -i -X DELETE http://$target_host:$target_port/api/workers/bill
+    ?HTTP/1.1 204 No Content
+
+# Test OPTIONS endpoint
+[shell test_options]
+    !curl -i -X OPTIONS http://$target_host:$target_port/api/workers
+    ?HTTP/1.1 204 No Content
+    ?Allow: POST, GET, PUT, PATCH, DELETE, OPTIONS
+    ?SH-PROMPT:
+
+    !curl -i -X OPTIONS http://$target_host:$target_port/api/semaphores
+    ?HTTP/1.1 204 No Content
+    ?Allow: POST, GET, DELETE, OPTIONS
+    ?SH-PROMPT:
+
+[shell start_server]
+    !yaws_appmod_router:print_routes().
+    ?$eprompt
+    !init:stop().
+
+[cleanup]
