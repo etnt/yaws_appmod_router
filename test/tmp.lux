@@ -4,9 +4,9 @@
 [global target_port=8080]
 [global eprompt=\d+>\s]
 
-[timeout 5]
 
 [shell server]
+    [timeout 5]
     !erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin
     ?$eprompt
     !advanced_routing:start().

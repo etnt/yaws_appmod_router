@@ -18,7 +18,6 @@
 
 %% Initialize router state
 init() ->
-    % Start the router server if not already started
     case whereis(yaws_appmod_router_server) of
         undefined ->
             {ok, _} = yaws_appmod_router_server:start_link();
@@ -28,27 +27,27 @@ init() ->
 
 %% Add a new route to the router
 add_route(Method, PathPattern, Handler, Middlewares)
-    when is_function(Handler, 1) andalso is_list(Middlewares) ->
+  when is_function(Handler, 1) andalso is_list(Middlewares) ->
     yaws_appmod_router_server:add_route(Method, PathPattern, Handler, Middlewares).
 
 %% Find matching routes for a request
 find_route(Method, Path) ->
-    % Direct access to the ETS table for reading
+    %% Direct access to the ETS table for reading
     Routes = [Route || {route, Route} <- ets:tab2list(?TABLE_NAME)],
     lists:filtermap(
-        fun(#route{method = M, path_pattern = PP} = Route) ->
-            case M =:= Method of
-                true ->
-                    case match_path(PP, Path) of
-                        {true, Params} -> {true, Route#route{params = Params}};
-                        false -> false
-                    end;
-                false -> 
-                    false
-            end
-        end,
-        Routes
-    ).
+      fun(#route{method = M, path_pattern = PP} = Route) ->
+              case M =:= Method of
+                  true ->
+                      case match_path(PP, Path) of
+                          {true, Params} -> {true, Route#route{params = Params}};
+                          false -> false
+                      end;
+                  false ->
+                      false
+              end
+      end,
+      Routes
+     ).
 
 %% Match a path pattern against an actual path
 match_path(Pattern, Path) ->
@@ -70,12 +69,25 @@ match_segments(_, _, _) ->
     false.
 
 %% Execute middleware chain
-execute_middlewares([], Req) ->
-    {ok, Req};
-execute_middlewares([Middleware | Rest], Req) ->
-    case Middleware(Req) of
-        {ok, UpdatedReq} -> execute_middlewares(Rest, UpdatedReq);
-        {error, Reason} -> {error, Reason}
+execute_middlewares(Middlewares, Req) ->
+    try
+        {ok, lists:foldl(
+               fun(Middleware, AccReq) ->
+                       case Middleware(AccReq) of
+                           {ok, NewReq} -> NewReq;
+                           {error, _Reason} = Error -> throw(Error)
+                       end
+               end, Req, Middlewares)}
+    catch
+        throw:Error ->
+            Error;
+
+        _:Error ->
+                 io:format("~p(~p) INTERNAL ERROR: ~p~n", [?MODULE, ?LINE, Error]),
+                 {error,
+                  [{status, 500},
+                   {content, "text/html", "<h1>500 Internal Server Error</h1>"}
+                  ]}
     end.
 
 %% Main appmod entry point
@@ -94,12 +106,12 @@ out(Req) ->
                 end;
             [] ->
                 [{status, 404},
-                {content, "text/html", "<h1>404 Not Found</h1>"}
+                 {content, "text/html", "<h1>404 Not Found</h1>"}
                 ]
         end
     catch
-        _:Error ->
-            io:format("~p(~p) ERROR: ~p~n", [?MODULE, ?LINE, Error]),
+        _:Error:StackTrace ->
+            io:format("~p(~p) ERROR: ~p~n~p~n", [?MODULE, ?LINE, Error, StackTrace]),
             [{status, 500},
              {content, "text/html", "<h1>500 Internal Server Error</h1>"}
             ]
