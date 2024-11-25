@@ -2,6 +2,7 @@
 -export([start/0]).
 -export([
     % Route handlers
+    get_user/1,
     get_users/1,
     create_user/1,
     get_user_posts/1,
@@ -51,7 +52,7 @@ start() ->
 
     % Single user operations with validation
     % curl -is "http://127.0.0.1:8080/api/users/bill"
-    yaws_appmod_router:add_route("GET", "/api/users/:id", fun advanced_routing:get_user_posts/1, [
+    yaws_appmod_router:add_route("GET", "/api/users/:id", fun advanced_routing:get_user/1, [
         fun advanced_routing:cors_middleware/1,
         fun advanced_routing:validate_user_middleware/1,
         fun advanced_routing:json_middleware/1
@@ -70,7 +71,7 @@ start() ->
     ]),
 
     % Nested routes for user posts
-    yaws_appmod_router:add_route("GET", "/api/users/:user_id/posts", fun advanced_routing:get_user_posts/1, [
+    yaws_appmod_router:add_route("GET", "/api/users/:id/posts", fun advanced_routing:get_user_posts/1, [
         fun advanced_routing:cors_middleware/1,
         fun advanced_routing:validate_user_middleware/1,
         fun advanced_routing:json_middleware/1
@@ -209,15 +210,42 @@ get_user_posts(Arg) ->
     Params = Arg#arg.appmoddata,
     UserId = list_to_binary(maps:get(id, Params)),
 
-    Posts = [
-        #{id => 1, title => <<"First Post">>, user_id => UserId},
-        #{id => 2, title => <<"Second Post">>, user_id => UserId}
-    ],
+    case UserId of
+        <<"bill">> ->
+            Posts = [
+                #{id => 1, title => <<"First Post">>, user_id => UserId},
+                #{id => 2, title => <<"Second Post">>, user_id => UserId}
+            ],
 
-    {content, "application/json", json:encode(#{
-        user_id => UserId,
-        posts => Posts
-    })}.
+            {content, "application/json", json:encode(#{
+                user_id => UserId,
+                posts => Posts
+            })};
+        _ ->
+            [{status, 404},
+             {content, "application/json", json:encode(#{
+                error => <<"User not found">>
+             })}]
+    end.
+
+
+get_user(Arg) ->
+    Params = Arg#arg.appmoddata,
+    UserId = maps:get(id, Params),
+
+    case UserId of
+        "bill" ->
+            {content, "application/json", json:encode(#{
+                user_id => list_to_binary(UserId),
+                name => <<"Bill Smith">>
+            })};
+        _ ->
+            [{status, 404},
+             {content, "application/json", json:encode(#{
+                error => <<"User not found">>
+             })}]
+    end.
+
 
 create_user_post(Arg) ->
     Params = Arg#arg.appmoddata,
@@ -230,7 +258,7 @@ create_user_post(Arg) ->
 
 update_user(Arg) ->
     Params = Arg#arg.appmoddata,
-    UserId = maps:get(id, Params),
+    UserId = list_to_binary(maps:get(id, Params)),
 
     {content, "application/json", json:encode(#{
         message => <<"User updated successfully">>,
@@ -239,7 +267,7 @@ update_user(Arg) ->
 
 delete_user(Arg) ->
     Params = Arg#arg.appmoddata,
-    UserId = maps:get(id, Params),
+    UserId = list_to_binary(maps:get(id, Params)),
 
     {content, "application/json", json:encode(#{
         message => <<"User deleted successfully">>,

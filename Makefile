@@ -6,9 +6,9 @@ export ERLC_USE_SERVER
 ERLC=erlc
 ERLC_FLAGS= +debug_info +compressed  -I deps -I include
 
-BEAM=$(patsubst %.erl,%.beam,$(wildcard src/*.erl))
-TBEAM=$(patsubst %.erl,%.beam,$(wildcard test/*.erl))
-XBEAM=$(patsubst %.erl,%.beam,$(wildcard examples/*.erl))
+BEAM=$(patsubst src/%.erl,ebin/%.beam,$(wildcard src/*.erl))
+TBEAM=$(patsubst test/%.erl,ebin/%.beam,$(wildcard test/*.erl))
+XBEAM=$(patsubst examples/%.erl,ebin/%.beam,$(wildcard examples/*.erl))
 APP_SRC=$(wildcard src/*.app.src)
 APP_TARGET=ebin/yaws_appmod_router.app
 
@@ -36,7 +36,13 @@ unit:
 starti:
 	erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin 
 
-%.beam: %.erl
+ebin/%.beam: src/%.erl | ensure_ebin
+	$(ERLC) $(ERLC_FLAGS) -o ebin $<
+
+ebin/%.beam: test/%.erl | ensure_ebin
+	$(ERLC) $(ERLC_FLAGS) -o ebin $<
+
+ebin/%.beam: examples/%.erl | ensure_ebin
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
 clean:
