@@ -80,17 +80,27 @@ execute_middlewares([Middleware | Rest], Req) ->
 
 %% Main appmod entry point
 out(Req) ->
-    Method = atom_to_list((Req#arg.req)#http_request.method),
-    Path = Req#arg.server_path,
+    try
+        Method = atom_to_list((Req#arg.req)#http_request.method),
+        Path = Req#arg.server_path,
 
-    case find_route(Method, Path) of
-        [#route{handler = Handler, middlewares = Middlewares, params = Params} | _] ->
-            case execute_middlewares(Middlewares, Req#arg{appmoddata = Params}) of
-                {ok, UpdatedReq} ->
-                    Handler(UpdatedReq);
-                {error, Reason} ->
-                    Reason
-            end;
-        [] ->
-            {html, "<h1>404 Not Found</h1>"}
+        case find_route(Method, Path) of
+            [#route{handler = Handler, middlewares = Middlewares, params = Params} | _] ->
+                case execute_middlewares(Middlewares, Req#arg{appmoddata = Params}) of
+                    {ok, UpdatedReq} ->
+                        Handler(UpdatedReq);
+                    {error, Reason} ->
+                        Reason
+                end;
+            [] ->
+                [{status, 404},
+                {content, "text/html", "<h1>404 Not Found</h1>"}
+                ]
+        end
+    catch
+        _:Error ->
+            io:format("~p(~p) ERROR: ~p~n", [?MODULE, ?LINE, Error]),
+            [{status, 500},
+             {content, "text/html", "<h1>500 Internal Server Error</h1>"}
+            ]
     end.

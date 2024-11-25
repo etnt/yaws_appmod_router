@@ -2,10 +2,11 @@
 
 [global target_host=localhost]
 [global target_port=8080]
+[global eprompt=\d+>\s]
 
 [shell start_server]
     !make SHELL
-    ?1>
+    ?eprompt
     !advanced_routing:start().
     ?"Advanced routing server started on port 8080
 
@@ -33,9 +34,9 @@
 
 # Test POST user endpoint
 [shell test_create_user]
-    !curl -i -X POST \
-    !     -H "Content-Type: application/json" \
-    !     -d '{"name":"Test User","email":"test@example.com"}' \
+    ~curl -i -X POST \
+    ~     -H "Content-Type: application/json" \
+    ~     -d 'name=bill,email=bill@example.com' \
     !     http://$target_host:$target_port/api/users
     ?HTTP/1.1 200 OK
     ?Content-Type: application/json

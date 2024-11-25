@@ -50,6 +50,7 @@ start() ->
     ]),
 
     % Single user operations with validation
+    % curl -is "http://127.0.0.1:8080/api/users/bill"
     yaws_appmod_router:add_route("GET", "/api/users/:id", fun advanced_routing:get_user_posts/1, [
         fun advanced_routing:cors_middleware/1,
         fun advanced_routing:validate_user_middleware/1,
@@ -145,12 +146,13 @@ rate_limit_middleware(Arg) ->
 validate_user_middleware(Arg) ->
     Params = Arg#arg.appmoddata,
     case maps:get(id, Params, undefined) of
-        undefined ->
-            {error, [{status, 400}, {content, "application/json",
-                "{\"error\": \"User ID is required\"}"
-            }]};
-        _Id ->
-            {ok, Arg}
+        "bill" ->
+            {ok, Arg};
+        _ ->
+            {error, 
+                [{status, 400},
+                 {content, "application/json", "{\"error\": \"Wrong User ID \"}"}
+                ]}
     end.
 
 logger_middleware(Arg) ->
@@ -205,7 +207,7 @@ create_user(#arg{opaque = OpaqueMap} = Arg) ->
 
 get_user_posts(Arg) ->
     Params = Arg#arg.appmoddata,
-    UserId = maps:get(id, Params),
+    UserId = list_to_binary(maps:get(id, Params)),
 
     Posts = [
         #{id => 1, title => <<"First Post">>, user_id => UserId},
