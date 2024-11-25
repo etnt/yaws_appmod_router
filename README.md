@@ -22,7 +22,7 @@ my_router:add_route("POST", "/submit", fun my_handler:submit/1, [auth_middleware
 
 First compile everything by running: `make old`
 
-Have a look at the `examples/simple.erl`, the important bits are:
+Have a look at the [simple example](./examples/simple.erl), the important bits are:
 
 ```erlang
 -module(simple).
@@ -180,3 +180,8 @@ Content-Type: text/html
 
 <html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>
 ```
+## More examples
+
+For more examples have a look at the [advanced routing](./examples/advanced_routing.erl) example.
+
+
