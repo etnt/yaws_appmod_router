@@ -166,7 +166,7 @@ appmod_handling_test_() ->
         {"404 for unknown route", fun() ->
             Req = make_request("GET", "/unknown"),
             ?assertEqual(
-                {html, "<h1>404 Not Found</h1>"},
+                [{status, 405}],
                 yaws_appmod_router:out(Req)
             )
         end},

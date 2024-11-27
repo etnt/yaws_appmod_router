@@ -16,14 +16,16 @@ REBAR3_URL=https://s3.amazonaws.com/rebar3/rebar3
 WGET=$(shell which wget)
 CURL=$(shell which curl)
 
-.PHONY: all old test clean
-all: rebar3 compile
-old: old-get-deps ensure_ebin $(BEAM) $(APP_TARGET) examples
-test: $(TBEAM) unit lux_test
-examples: $(XBEAM)
+.PHONY: all old test unit examples clean
+all: old
 
-ensure_ebin:
-	@mkdir -p ebin
+new: rebar3 compile
+
+old: old-get-deps $(BEAM) $(APP_TARGET) examples
+
+test: $(TBEAM) unit lux_test
+
+examples: $(XBEAM)
 
 ebin/yaws_appmod_router.app: src/yaws_appmod_router.app.src
 	@mkdir -p ebin
@@ -36,13 +38,13 @@ unit:
 starti:
 	erl -pa ./ebin -pa ./deps/yaws/_build/default/lib/yaws/ebin 
 
-ebin/%.beam: src/%.erl | ensure_ebin
+ebin/%.beam: src/%.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
-ebin/%.beam: test/%.erl | ensure_ebin
+ebin/%.beam: test/%.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
-ebin/%.beam: examples/%.erl | ensure_ebin
+ebin/%.beam: examples/%.erl
 	$(ERLC) $(ERLC_FLAGS) -o ebin $<
 
 clean:
@@ -51,7 +53,6 @@ clean:
 
 .PHONY: lux_test
 lux_test:
-	#(cd test; ../deps/lux/bin/lux tmp.lux)
 	(cd test; ../deps/lux/bin/lux test_crud_routing.lux)
 	(cd test; ../deps/lux/bin/lux test_advanced_routing.lux)
 
@@ -81,12 +82,12 @@ rebar3:
 endif
 
 old_deps:
-	if [ ! -d deps ]; then \
+	@if [ ! -d deps ]; then \
 	  mkdir deps; \
 	fi
 
 yaws-dep:
-	if [ ! -d deps/yaws ]; then \
+	@if [ ! -d deps/yaws ]; then \
 	  cd deps; \
 	  git clone https://github.com/erlyaws/yaws.git; \
 	  cd yaws; \
@@ -94,7 +95,7 @@ yaws-dep:
 	fi
 
 lux-dep:
-	if [ ! -d deps/lux ]; then \
+	@if [ ! -d deps/lux ]; then \
 	  cd deps; \
 	  git clone https://github.com/hawk/lux.git; \
 	  cd lux; \
