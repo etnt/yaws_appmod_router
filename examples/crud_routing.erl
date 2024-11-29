@@ -3,7 +3,7 @@
 -export([
     % Route handlers
     handle_workers/1,
-    handle_semaphore/1,
+    handle_semaphores/1,
 
     % Middleware
     cors_middleware/1,
@@ -105,15 +105,16 @@ json_post_data_middleware(#arg{clidata    = Data,
 logger_middleware(Arg) ->
     Method = (Arg#arg.req)#http_request.method,
     Path = Arg#arg.server_path,
+    Host = yaws_api:headers_host(Arg#arg.headers),
     TS = calendar:system_time_to_rfc3339(erlang:system_time(second)),
-    io:format("<~s> ~p ~p~n", [TS, Method, Path]),
+    io:format("<~s> (~s) ~p ~p~n", [TS, Host,Method, Path]),
     {ok, Arg}.
 
 %%% ---------------------------------------------------------------------------
 %%% R O U T E   H A N D L E R S
 %%% ---------------------------------------------------------------------------
 
-handle_semaphore(_Arg) ->
+handle_semaphores(_Arg) ->
     [{status,200}]. % TODO mostly for testing OPTIONS
 
 

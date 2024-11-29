@@ -4,7 +4,9 @@
 %% API
 -export([
     start_link/0,
-    add_route/4
+    add_route/5,
+    create_table/1,
+    get_tables/0
 ]).
 
 %% gen_server callbacks
@@ -25,6 +27,10 @@
 
 -define(TABLE_NAME, yaws_appmod_routes).
 
+-record(state, {
+    tables = []  :: [atom()]
+}).
+
 
 %% ------------------------------------------------------------------
 %% API FUNCTIONS
@@ -32,40 +38,59 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-add_route(Method, PathPattern, Handler, Middlewares) 
+add_route(TableName, Method, PathPattern, Handler, Middlewares) 
     when is_list(Method) andalso is_list(PathPattern) andalso
             is_function(Handler, 1) andalso is_list(Middlewares) ->
     case {is_http_method(Method), is_crud(Method)} of
         {true, false} ->
-            gen_server:cast(?MODULE, {add_route, Method, PathPattern, Handler, Middlewares});
+            gen_server:call(?MODULE, {add_route, TableName, Method, PathPattern, Handler, Middlewares});
         {false, true} ->
-            gen_server:cast(?MODULE, {add_crud_route, Method, PathPattern, Handler, Middlewares});
+            gen_server:call(?MODULE, {add_crud_route, TableName, Method, PathPattern, Handler, Middlewares});
         _ ->
             {error, invalid_method}
     end;
-add_route(_, _, _, _) ->
+add_route(_, _, _, _, _) ->
     {error, invalid_arguments}.
+
+create_table(TableName) ->
+    gen_server:call(?MODULE, {create_table, TableName}).
+
+get_tables() ->
+    gen_server:call(?MODULE, get_tables).
 
 
 %% ------------------------------------------------------------------
 %% GEN_SERVER CALLBACKS
 %% ------------------------------------------------------------------
 init([]) ->
-    % Create ETS table with protected access - only this process can write
-    ets:new(?TABLE_NAME, [named_table, protected, ordered_set, {keypos, 2}]),
-    {ok, []}.
+    {ok, #state{}}.
 
+
+handle_call({add_route, TableName, Method, PathPattern, Handler, Middlewares}, _From, State) ->
+    insert_route(TableName, Method, PathPattern, Handler, Middlewares),
+    {reply, ok, State};
+%%
+handle_call({add_crud_route, TableName, Method, PathPattern, Handler, Middlewares}, _From, State) ->
+    add_crud_routes(TableName, Method, PathPattern, Handler, Middlewares),
+    {reply, ok, State};
+    %%
+handle_call({create_table, TableName}, _From, #state{tables = Tables} = State) ->
+    case ets:info(?TABLE_NAME, named_table) of
+        undefined ->
+            %% Create ETS table with protected access - only this process can write
+            Tref = ets:new(TableName, [named_table, protected, ordered_set, {keypos, 2}]),
+            {reply, {ok, Tref}, State#state{tables = [Tref|Tables]}};
+        _ ->
+            {reply, {error, <<"table_already_exists">>}, State}
+    end;
+%%
+handle_call(get_tables, _From, #state{tables = Tables} = State) ->
+    {reply, {ok, Tables}, State};
+    %%
 handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
+    {reply, {error, <<"unknown_call">>}, State}.
 
-handle_cast({add_route, Method, PathPattern, Handler, Middlewares}, State) ->
-    insert_route(Method, PathPattern, Handler, Middlewares),
-    {noreply, State};
-%%
-handle_cast({add_crud_route, Method, PathPattern, Handler, Middlewares}, State) ->
-    add_crud_routes(Method, PathPattern, Handler, Middlewares),
-    {noreply, State};
-%%
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -83,25 +108,25 @@ code_change(_OldVsn, State, _Extra) ->
 %% INTERNAL FUNCTIONS
 %% ------------------------------------------------------------------
 
-add_crud_routes(Crud, PathPattern, Handler, Middlewares) ->
+add_crud_routes(TableName, Crud, PathPattern, Handler, Middlewares) ->
     lists:foreach(
         fun($C) ->
-            insert_route("POST", PathPattern, Handler, Middlewares, Crud, create);
+            insert_route(TableName, "POST", PathPattern, Handler, Middlewares, Crud, create);
             ($R) ->
-                insert_route("GET", PathPattern, Handler, Middlewares, Crud, index),
-                insert_route("GET", PathPattern++"/:id", Handler, Middlewares, Crud, show);
+                insert_route(TableName, "GET", PathPattern, Handler, Middlewares, Crud, index),
+                insert_route(TableName, "GET", PathPattern++"/:id", Handler, Middlewares, Crud, show);
             ($U) ->
-                insert_route("PUT", PathPattern++"/:id", Handler, Middlewares, Crud, replace),
-                insert_route("PATCH", PathPattern++"/:id", Handler, Middlewares, Crud, modify);
+                insert_route(TableName, "PUT", PathPattern++"/:id", Handler, Middlewares, Crud, replace),
+                insert_route(TableName, "PATCH", PathPattern++"/:id", Handler, Middlewares, Crud, modify);
             ($D) ->
-                insert_route("DELETE", PathPattern++"/:id", Handler, Middlewares, Crud, delete)
+                insert_route(TableName, "DELETE", PathPattern++"/:id", Handler, Middlewares, Crud, delete)
         end, Crud),
-    insert_route("OPTIONS", PathPattern, undefined, [], Crud, options).
+    insert_route(TableName, "OPTIONS", PathPattern, undefined, [], Crud, options).
 
-insert_route(Method, PathPattern, Handler, Middlewares) ->
-    insert_route(Method, PathPattern, Handler, Middlewares, _Crud = undefined, _Action = undefined).
+insert_route(TableName, Method, PathPattern, Handler, Middlewares) ->
+    insert_route(TableName, Method, PathPattern, Handler, Middlewares, _Crud = undefined, _Action = undefined).
 
-insert_route(Method, PathPattern, Handler, Middlewares, Crud, Action) ->
+insert_route(TableName, Method, PathPattern, Handler, Middlewares, Crud, Action) ->
     Route = #route{
         method = Method,
         crud = Crud,
@@ -110,4 +135,4 @@ insert_route(Method, PathPattern, Handler, Middlewares, Crud, Action) ->
         handler = Handler,
         middlewares = Middlewares
     },
-    ets:insert(?TABLE_NAME, {route, Route}).
+    ets:insert(TableName, {route, Route}).

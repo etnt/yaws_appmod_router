@@ -4,11 +4,13 @@
 
 Implements a routing capability for the Erlang Yaws web server as an appmod.
 
-The router should allow:
+The router allow:
 
 * Defining routes with path patterns.
 * Associating middleware and callbacks with those routes.
 * Specifying HTTP methods (GET, POST, etc.)
+* CRUD routes: shortcut for defining routes for Create, Read, Update and Delete.
+* Multiple routing tables for different IP/Port combinations.
 
 Example usage:
 
@@ -278,4 +280,70 @@ GET      /api/workers/:id                         CRUD  show      fun crud_routi
 PATCH    /api/workers/:id                         CRUD  modify    fun crud_routing:handle_workers/1
 PUT      /api/workers/:id                         CRUD  replace   fun crud_routing:handle_workers/1
 ok
+```
+
+## Multiple route tables
+
+Yaws makes it possible to listen to multiple IP/Port combinations. Hence we can setup
+completely separate routing tables for each IP/Port combination.
+
+See the [multi routing](./examples/multi_routing.erl) example, for how to setup this.
+
+We show the important bits here. We create two separate routing tables, one for
+each IP/Port combination. We then add routes to each table.
+
+It is important to set the `table_name` in the opaque map of the Sconf, else
+the yaws_appmod_router will not be able to find the correct table to use.
+
+```erlang
+setup_servers() ->
+    IP = {127,0,0,1},
+    Port8080 = 8080,
+    Port9999 = 9999,
+    TableName8080 = yaws_appmod_router:mk_table_name(IP, Port8080),
+    TableName9999 = yaws_appmod_router:mk_table_name(IP, Port9999),
+
+    {ok, _} = application:ensure_all_started([yaws, yaws_appmod_router]),
+    yaws_appmod_router:init(TableName8080),
+    yaws_appmod_router:init(TableName9999),
+
+    yaws_appmod_router:table_add_route(
+                                 TableName8080,
+                                 "CRUD", "/api/workers",
+                                 %% Handler
+                                 fun ...
+                                 %% Middlewares
+                                 [ ... ]),
+
+    yaws_appmod_router:table_add_route(
+                                    TableName9999,
+                                    "CRUD", "/api/users",
+                                    %% Handler
+                                    fun ...
+                                    %% Middlewares
+                                    [ ... ]),
+    ...
+
+    setup_server(IP, {Port8080, TableName8080}, {Port9999, TableName9999}).
+
+setup_server(IP, {Port1, TableName1}, {Port2, TableName2}) ->
+    Id = "multi_routing",
+    GconfList = [{id, Id}],
+    Docroot = "/tmp",
+    SconfList =
+        [
+            {port, Port1},
+            {servername, "server1"},
+            {listen, IP},
+            {docroot, Docroot},
+            %% NOTE: It is important to set the table name here in the opaque map,
+            %% else the yaws_appmod_router will not be able to find what table to use.
+            {opaque, #{table_name => TableName1}},
+            {appmods, [{"/", yaws_appmod_router}]}
+        ],
+
+    {ok, SCList, GC, ChildSpecs} =
+        yaws_api:embedded_start_conf(Docroot, SconfList, GconfList, Id),
+
+    ...continue to setup more servers...
 ```

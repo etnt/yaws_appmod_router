@@ -1,0 +1,42 @@
+[doc Test multi routing endpoints]
+
+[global target_host=localhost]
+[global target_port_8080=8080]
+[global target_port_9999=9999]
+[global eprompt=\d+>\s]
+
+[shell start_server]
+    !erl -pa ../ebin -pa ../deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
+    !multi_routing:start().
+    ?Yaws: Listening to 127.0.0.1:[9999 | 8080]
+    ?Yaws: Listening to 127.0.0.1:[9999 | 8080]
+    ?$eprompt
+
+    !yaws_appmod_router:print_routes().
+    ?>>> TABLE\('yaws_appmod_routes_127.0.0.1_9999'\)
+    ?GET[ ]+/api/bitcoin[ ]+CR[ ]+index[ ]+fun crud_routing:handle_semaphores/1
+    ?>>> TABLE\('yaws_appmod_routes_127.0.0.1_8080'\)
+    ?GET[ ]+/api/semaphores[ ]+CRD[ ]+index[ ]+fun crud_routing:handle_semaphores/1
+    ?$eprompt
+
+[shell test_get_worker]
+    !curl -i -X GET http://$target_host:$target_port_8080/api/workers/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: application/json
+    ?{.*"worker":"bill".*
+
+    !curl -i -X GET http://$target_host:$target_port_9999/api/workers/bill
+    ?HTTP/1.1 404 Not Found
+
+[shell test_get_bitcoin]
+    !curl -i -X GET http://$target_host:$target_port_8080/api/bitcoin
+    ?HTTP/1.1 404 Not Found
+
+    !curl -i -X GET http://$target_host:$target_port_9999/api/bitcoin
+    ?HTTP/1.1 200 OK
+
+[shell start_server]
+    !init:stop().
+
+[cleanup]

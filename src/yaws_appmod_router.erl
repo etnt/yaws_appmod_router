@@ -1,8 +1,11 @@
 -module(yaws_appmod_router).
 -export([
     init/0,
+    init/1,
     add_route/4,
+    table_add_route/5,
     find_route/2,
+    find_route/3,
     match_path/2,
     execute_middlewares/2,
     out/1,
@@ -11,7 +14,9 @@
     is_crud/1,
     is_crud_operation/1,
     crud_operations/0,
-    print_routes/0
+    print_routes/0,
+    print_routes/1,
+    mk_table_name/2
 ]).
 
 -include_lib("yaws/include/yaws.hrl").
@@ -20,39 +25,89 @@
 
 -export_type([crud_operations/0,
               crud/0,
-              actions/0]).
+              actions/0,
+              table_name/0,
+              error_msg/0
+            ]).
 
 -type crud_operations() :: $C | $R | $U | $D.
 -type crud() :: list(crud_operations()).
 -type actions() :: index | show | create | replace | modify | delete | options.
+-type table_name() :: atom().
+-type error_msg() :: binary().
+
 
 -define(is_crud_operation(Operation), is_integer(Operation)).
 
 -define(TABLE_NAME, yaws_appmod_routes).
+-define(TABLE_NAME_STRING, "yaws_appmod_routes").
 
 
-%% Initialize router state
+%%% @doc Initialize default router table
+-spec init() -> {ok, table_name()} | {error, error_msg()} .
 init() ->
+    init(?TABLE_NAME).
+
+%%% @doc Initialize router table with given name
+-spec init(table_name()) -> {ok, table_name()} | {error, error_msg()} .
+init(TableName) ->
     case whereis(yaws_appmod_router_server) of
         undefined ->
-            {ok, _} = yaws_appmod_router_server:start_link();
+            {ok, _} = yaws_appmod_router_server:start_link(),
+            yaws_appmod_router_server:create_table(TableName);
         _ ->
-            ok
+            yaws_appmod_router_server:create_table(TableName)
     end.
 
-%% Add a new route to the router
-add_route(Method, PathPattern, Handler, Middlewares)
+%%% @doc Create a table name that include ListenIp and Port
+-spec mk_table_name(inet:ip_address(), inet:port_number()) -> atom().
+mk_table_name(IP, Port) ->
+    list_to_atom(?TABLE_NAME_STRING ++ "_" ++ inet_parse:ntoa(IP) ++ "_" ++ integer_to_list(Port)).
+
+%%% @doc Add a new route to the default router table
+-spec add_route(Method :: string(),
+                PathPattern :: string(),
+                Handle :: function(),
+                Middlewares :: list() ) ->
+        ok.
+add_route(Method, PathPattern, Handler, Middlewares) ->
+    table_add_route(?TABLE_NAME, Method, PathPattern, Handler, Middlewares).
+
+
+%%% @doc Add a new route to the specified router table
+-spec table_add_route(TableName :: atom(),
+                        Method :: string(),
+                        PathPattern :: string(),
+                        Handle :: function(),
+                        Middlewares :: list() ) ->
+        ok.
+table_add_route(Table, Method, PathPattern, Handler, Middlewares)
   when is_list(Method) andalso is_list(PathPattern) andalso
      is_function(Handler, 1) andalso is_list(Middlewares) ->
-    yaws_appmod_router_server:add_route(Method, PathPattern, Handler, Middlewares).
+    yaws_appmod_router_server:add_route(Table, Method, PathPattern, Handler, Middlewares).
 
+
+%%% @doc Print all routes
+-spec print_routes() ->
+        ok.
 print_routes() ->
-    Routes = [R || {route,R} <- ets:tab2list(?TABLE_NAME)],
-    Sorted = lists:keysort(#route.path_pattern, Routes),
-    pprint_header(),
-    lists:foreach(fun pprint/1, Sorted).
+    {ok, Tables} = yaws_appmod_router_server:get_tables(),
+    print_routes(Tables).
 
-pprint_header() ->
+%%% @doc Print all routes in the specified router tables
+-spec print_routes(TableNames :: [atom()]) ->
+        ok.
+print_routes(Tables) when is_list(Tables) ->
+    F = fun(Table) ->
+            Routes = [R || {route,R} <- ets:tab2list(Table)],
+            Sorted = lists:keysort(#route.path_pattern, Routes),
+            pprint_header(Table),
+            lists:foreach(fun pprint/1, Sorted)
+        end,
+    lists:foreach(F, Tables).
+
+pprint_header(Table) ->
+    io:format("~n>>> TABLE(~w)~n", [Table]),
     io:format("~-8.s ~-40.s ~-5.s ~-9.s ~s~n", ["METHOD", "PATH PATTERN", "CRUD", "ACTION", "HANDLER"]),
     io:format("~-8.s ~-40.s ~-5.s ~-9.s ~s~n", ["------", "------------", "----", "------", "-------"]).
 
@@ -70,8 +125,11 @@ pp_crud(Crud)      -> Crud.
 
 %% Find matching routes for a request
 find_route(Method, Path) ->
+    find_route(Method, Path, ?TABLE_NAME).
+
+find_route(Method, Path, TableName) ->
     %% Direct access to the ETS table for reading
-    Routes = [Route || {route, #route{method = M} = Route} <- ets:tab2list(?TABLE_NAME),
+    Routes = [Route || {route, #route{method = M} = Route} <- ets:tab2list(TableName),
                         M == Method],
     lists:filtermap(
         fun(#route{path_pattern = PP, action = Action} = Route) ->
@@ -131,8 +189,10 @@ out(Req) ->
     try
         Method = atom_to_list((Req#arg.req)#http_request.method),
         Path = Req#arg.server_path,
+        OpaqueMap = Req#arg.opaque,
+        TableName = get_table_name(OpaqueMap, ?TABLE_NAME),
 
-        case find_route(Method, Path) of
+        case find_route(Method, Path, TableName) of
             [#route{action = options, crud = Crud} | _] when is_list(Crud) ->
                 return_options(Req, Crud);
             [#route{handler = Handler, middlewares = Middlewares, params = Params} | _] ->
@@ -143,7 +203,7 @@ out(Req) ->
                         Reason
                 end;
             [] ->
-                [{status, 405}]  % Method not allowed
+                [{status, 404}]  % Not Found
         end
     catch
         _:Error:StackTrace ->
@@ -152,6 +212,11 @@ out(Req) ->
              {content, "text/html", "<h1>500 Internal Server Error</h1>"}
             ]
     end.
+
+get_table_name(OpaqueMap, Default) ->
+    %% In case OpaqueMap is not a map, return Default
+    try maps:get(table_name, OpaqueMap, Default)
+    catch _:_ -> Default end.
 
 return_options(_Req, Crud) when is_list(Crud) ->
     Methods =
