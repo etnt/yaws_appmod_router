@@ -20,6 +20,15 @@ my_router:add_route("GET", "/hello", fun my_handler:hello/1).
 my_router:add_route("POST", "/submit", fun my_handler:submit/1, [auth_middleware]).
 ```
 
+## Install and use
+
+After cloning run:
+
+1. **make**
+2. **make test**
+
+Study the examples for how to setup Yaws and the yaws_appmod_router.
+
 ## Simple Example
 
 First compile everything by running: `make old`
@@ -94,7 +103,7 @@ Hello this is the '/hello' route !
 
 
 # Request 3
-$ curl -is "http://127.0.0.1:8080/user/bill"
+$ curl -is  "http://127.0.0.1:8080/user/bill"
 HTTP/1.1 200 OK
 Server: Yaws 2.2.0
 Date: Sat, 23 Nov 2024 21:36:18 GMT
@@ -106,15 +115,15 @@ Hello user bill! This is your profile page.
 
 ## Example, using Middleware for authentication
 
-Let us extend the simple example with a middleware that checks for valid
+Let us modify the simple example with a middleware that checks for valid
 Basic Authentication credentials.
 
 ```erlang
 start() ->
     ...code here as before...
 
-    yaws_appmod_router:add_route("GET", "/login", fun simple:login/1, [
-        fun simple:auth_middleware/1
+    yaws_appmod_router:add_route("GET", "/user/:id", fun simple:user/1, [
+        fun simple:authenticate/1
     ]),
 
     ...code here as before...
@@ -127,7 +136,7 @@ start() ->
 %% map of the request, indicating that the user is authenticated.
 %% If the credentials are invalid, the middleware returns an error response.
 %% which will cause the request to be terminated.
-auth_middleware(Arg) ->
+authenticate(Arg) ->
     Auth = yaws_api:headers_authorization(yaws_api:arg_headers(Arg)),
     case Auth of
         {"bill", "qwe123", _Orig} ->
@@ -138,31 +147,30 @@ auth_middleware(Arg) ->
             unauthorized_response(Else)
     end.
 
-unauthorized_response(_Else) ->
-    Status = {status, 401},
-    Headers = [{header, ["WWW-Authenticate: Basic realm=\"My Server\""]}],
-    Html = "<html><body><h1>Authentication Failed</h1><p>Please provide valid credentials.</p></body></html>",
-    {error, [Status | Headers] ++ [{content, "text/html", Html}]}.
-
-update_opaque(#arg{opaque = OpaqueMap} = Arg, Key, Value) when is_map(OpaqueMap) ->
-    Arg#arg{opaque = maps:put(Key, Value, OpaqueMap)}.
-
-%% Protected login route
-login(Arg) ->
-    case maps:get(authenticated, Arg#arg.opaque, false) of
+%% Here is our route handler function demonstrating parameter extraction.
+%% NOTE: We also check that the user has been authenticated by the Middleware.
+user(#arg{opaque     = OpaqueMap,
+          appmoddata = Params} = _Arg) ->
+    case maps:get(authenticated, OpaqueMap, false) of
+        false ->
+            %% NOTE: We won't really end up here since our Middleware will
+            %% return an error response if the user is not authenticated.
+            %% But in case it would mal-function we return a generic error.
+            [{status, 401},
+             {content, "text/html", "<h1>Error</h1><p>Authentication required.</p>"}];
         true ->
-            {content, "text/html",
-                "<html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>"};
-        _ ->
-            {content, "text/html",
-                "<html><body><h1>Error</h1><p>Authentication required.</p></body></html>"}
+            UserId = maps:get(id, Params),
+            {content, "text/plain",
+                io_lib:format("Hello user ~s! This is your profile page.", [UserId])}
     end.
+
 ```
 
 Start the server as before and then make some requests:
 
 ```bash
-$ curl -is -u bill:asdf "http://127.0.0.1:8080/login"
+# Request 4
+$ curl -is -u bill:asdf "http://127.0.0.1:8080/user/bill"
 HTTP/1.1 401 Unauthorized
 Server: Yaws 2.2.0
 Date: Sun, 24 Nov 2024 09:21:37 GMT
@@ -173,15 +181,87 @@ WWW-Authenticate: Basic realm="My Server"
 <html><body><h1>Authentication Failed</h1><p>Please provide valid credentials.</p></body></html>
 
 
-$ curl -is -u bill:qwe123 "http://127.0.0.1:8080/login"
+# Request 5
+$ curl -is -u bill:qwe123 "http://127.0.0.1:8080/user/bill"
 HTTP/1.1 200 OK
 Server: Yaws 2.2.0
 Date: Sun, 24 Nov 2024 09:21:46 GMT
 Content-Length: 86
 Content-Type: text/html
 
-<html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>
+Hello user bill! This is your profile page.
 ```
+
+## The Yaws Mod:auth/2 and Mod:out/1 appmod callbacks
+
+Yaws provides two appmod callback functions that can be invoked.
+The `auth/2` callback is invoked before the out/1 callback and is
+used to check if the request is authorized. The `out/1` callback
+is invoked after the auth/2 callback and is used to handle the
+request.
+
+With the yaws_appmod_router, we don't need the `auth/2` callback
+since we can use our own authentication middleware to check if the
+user is authenticated. However if you already have an existing system
+where you need to use the `auth/2` callback, you can still use the
+yaws_appmod_router to handle the authentication.
+
+By enabling the `yaws_appmod_app_auth` flag in the opaque map of the
+request, the yaws_appmod_router will handle the `auth/2` callback
+and invoke your route handler function. Again see the 
+[simple example](./examples/simple.erl), for the details.
+Below, we highlight the important bits:
+
+```erlang
+    ....
+    %% NOTE: The login handler will be called both via the auth/2 callback
+    %% and via the out/1 callback.
+    yaws_appmod_router:add_route("GET", "/login", fun simple:login/1, []),
+
+    ...setting up Yaws...
+    Docroot = "/tmp",
+    Realm = "Simple",
+    Type = "Basic",
+    %% NOTE: We enable auth/2 callback handling from root here.
+    Auth = #auth{dir="/",
+                docroot=Docroot,
+                realm=Realm,
+                type=Type,
+                headers = ["WWW-Authenticate: "++Type++" realm=\""++Realm++"\"\r\n"],
+                mod=yaws_appmod_router},
+    OpaqueMap = #{},
+    SconfList = [
+        {port, 8080},
+        {servername, "simple_server"},
+        {listen, {127, 0, 0, 1}},
+        {docroot, Docroot},
+        %% NOTE: We enable auth/2 callback handling here.
+        {opaque, yaws_appmod_router:enable_auth(OpaqueMap)},
+        {auth, Auth},
+        %% NOTE: We hook in the yaws_appmod_router appmod here at root.
+        {appmods, [{"/", yaws_appmod_router}]}
+    ],
+    ....
+
+
+%% Login route handler, protected by auth/2 callback
+login(#arg{} = _Arg) ->
+    %% NOTE: this is executed during the out/1 callback.
+    {content, "text/html",
+        "<html><body><h1>Welcome!</h1><p>You have successfully authenticated.</p></body></html>"};
+%%
+login({Arg, _Auth}) ->
+    %% NOTE: This is executed during the auth/2 callback, so we can only
+    %% return values that are valid according to the Yaws auth/2 callback.
+    case authenticate(Arg) of
+        {ok, _} -> true;
+        _       -> false
+    end.
+```
+
+Note the two clauses of the login route handler function. One clause will
+match when the auth/2 callback is invoked and the other when the out/1 callback
+is invoked.
 
 ## More examples
 
@@ -242,6 +322,7 @@ When using a CRUD route specification, **yaws_appmod_router** will automatically
 answer to `OPTIONS` requests and return the allowed methods for the given route.
 
 ```bash
+# Request 6
 $ curl -is -X OPTIONS  http://localhost:8080/api/users
 HTTP/1.1 204 No Content
 Server: Yaws 2.2.0
@@ -252,6 +333,7 @@ Allow: POST, GET, PUT, PATCH, DELETE, OPTIONS
 A CORS preflight request:
 
 ```bash
+# Request 7
 $ curl -is -X OPTIONS -H 'Access-Control-Request-Method: POST'  http://localhost:8080/api/users
 HTTP/1.1 200 OK
 Server: Yaws 2.2.0

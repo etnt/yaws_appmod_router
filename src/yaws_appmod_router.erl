@@ -1,5 +1,9 @@
 -module(yaws_appmod_router).
 -export([
+    auth/2,
+    enable_auth/1,
+    disable_auth/1,
+    is_auth_enabled/1,
     init/0,
     init/1,
     add_route/4,
@@ -63,6 +67,21 @@ init(TableName) ->
 -spec mk_table_name(inet:ip_address(), inet:port_number()) -> atom().
 mk_table_name(IP, Port) ->
     list_to_atom(?TABLE_NAME_STRING ++ "_" ++ inet_parse:ntoa(IP) ++ "_" ++ integer_to_list(Port)).
+
+%%% @doc Enable Yaws auth/2 callback handling
+-spec enable_auth(OpaqueMap :: map()) -> map().
+enable_auth(OpaqueMap) when is_map(OpaqueMap) ->
+    OpaqueMap#{yaws_appmod_app_auth => true}.
+
+%%% @doc Disable Yaws auth/2 callback handling
+-spec disable_auth(OpaqueMap :: map()) -> map().
+disable_auth(OpaqueMap) when is_map(OpaqueMap) ->
+    OpaqueMap#{yaws_appmod_app_auth => false}.
+
+%%% @doc Check if Yaws auth/2 callback handling is enabled
+-spec is_auth_enabled(OpaqueMap :: map()) -> boolean().
+is_auth_enabled(OpaqueMap) when is_map(OpaqueMap) ->
+    maps:get(yaws_appmod_app_auth, OpaqueMap, false).
 
 %%% @doc Add a new route to the default router table
 -spec add_route(Method :: string(),
@@ -184,24 +203,70 @@ execute_middlewares(Middlewares, Req) ->
                   ]}
     end.
 
-%% Main appmod entry point
-out(Req) ->
+auth(#arg{opaque = OpaqueMap} = Arg, Auth) when is_map(OpaqueMap) ->
+    case is_auth_enabled(OpaqueMap) of
+        true ->
+            invoke_auth(Arg, Auth);
+        false ->
+            true
+    end.
+
+invoke_auth(#arg{server_path = Path,
+                 opaque      = OpaqueMap} = Arg,
+            Auth) ->
     try
-        Method = atom_to_list((Req#arg.req)#http_request.method),
-        Path = Req#arg.server_path,
-        OpaqueMap = Req#arg.opaque,
+        Method = atom_to_list(yaws_api:http_request_method(yaws_api:arg_req(Arg))),
         TableName = get_table_name(OpaqueMap, ?TABLE_NAME),
 
         case find_route(Method, Path, TableName) of
-            [#route{action = options, crud = Crud} | _] when is_list(Crud) ->
-                return_options(Req, Crud);
-            [#route{handler = Handler, middlewares = Middlewares, params = Params} | _] ->
-                case execute_middlewares(Middlewares, Req#arg{appmoddata = Params}) of
+            [#route{action = options, crud = Crud}] when is_list(Crud) ->
+                true;
+            [#route{handler = Handler}] ->
+                %% NOTE: The Handler may not implement the auth/2 callback,
+                %% so we just ignore a function_clause crash here.
+                try
+                    Handler({Arg, Auth})
+                catch
+                    error:function_clause ->
+                        true
+                end;
+            L when is_list(L) andalso length(L) > 1 ->
+                io:format("~p(~p) AUTH ERROR: Multiple routes found for ~p ~p , ~p~n",
+                            [?MODULE, ?LINE, Method, Path, L]),
+                false;
+            [] ->
+                true
+        end
+    catch
+        Type:Error:StackTrace ->
+            io:format("~p(~p) AUTH ERROR: ~p~n~p~n", [?MODULE, ?LINE, {Type,Error}, StackTrace]),
+            false
+    end.
+
+%% Main appmod entry point
+out(Arg) when is_record(Arg, arg) ->
+    try
+        Method = atom_to_list(yaws_api:http_request_method(yaws_api:arg_req(Arg))),
+        Path = Arg#arg.server_path,
+        OpaqueMap = Arg#arg.opaque,
+        TableName = get_table_name(OpaqueMap, ?TABLE_NAME),
+
+        case find_route(Method, Path, TableName) of
+            [#route{action = options, crud = Crud}] when is_list(Crud) ->
+                return_options(Arg, Crud);
+            [#route{handler = Handler, middlewares = Middlewares, params = Params}] ->
+                case execute_middlewares(Middlewares, Arg#arg{appmoddata = Params}) of
                     {ok, UpdatedReq} ->
                         Handler(UpdatedReq);
                     {error, Reason} ->
                         Reason
                 end;
+            L when is_list(L) andalso length(L) > 1 ->
+                io:format("~p(~p) ERROR: Multiple routes found for ~p ~p , ~p~n",
+                          [?MODULE, ?LINE, Method, Path, L]),
+                [{status, 500},
+                 {content, "text/html", "<h1>500 Internal Server Error</h1>"}
+                ];
             [] ->
                 [{status, 404}]  % Not Found
         end

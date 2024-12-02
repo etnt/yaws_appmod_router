@@ -1,0 +1,61 @@
+[doc Test simple routing endpoints]
+
+[global target_host=localhost]
+[global target_port=8080]
+[global eprompt=\d+>\s]
+
+[shell start_server]
+    !erl -pa ../ebin -pa ../deps/yaws/_build/default/lib/yaws/ebin
+    ?$eprompt
+    !simple:start().
+    ?Yaws: Listening to 127.0.0.1:8080.*
+    ?$eprompt
+
+# Test root endpoint
+[shell test_root]
+    !curl -i -X GET http://$target_host:$target_port/
+    ?HTTP/1.1 200 OK
+    ?Content-Type: text/plain
+    ?This is the '/' route.*
+
+# Test hello endpoint
+[shell test_hello]
+    !curl -i -X GET http://$target_host:$target_port/hello
+    ?HTTP/1.1 200 OK
+    ?Content-Type: text/plain
+    ?Hello this is the '/hello' route.*
+
+
+# Test user endpoint with middleware authentication
+[shell test_user_with_auth]
+    !curl -i -X GET -u bill:qwe123 http://$target_host:$target_port/user/bill
+    ?HTTP/1.1 200 OK
+    ?Content-Type: text/plain
+    ?Hello user bill\! This is your profile page.
+
+    !curl -i -X GET http://$target_host:$target_port/user/123
+    ?HTTP/1.1 401 Unauthorized
+    ?WWW-Authenticate: Basic realm="My Server"
+    ?Authentication Failed
+
+
+# Test login endpoint with auth/2 callback authentication
+[shell test_login_with_auth]
+    !curl -i -X GET -u bill:qwe123 http://$target_host:$target_port/login
+    ?HTTP/1.1 200 OK
+    ?Content-Type: text/html
+    ?Welcome!.*successfully authenticated
+
+    !curl -i -X GET -u bill:qwe3 http://$target_host:$target_port/login
+    ?HTTP/1.1 401 Unauthorized
+    ?WWW-Authenticate: Basic realm="Simple"
+
+    !curl -i -X GET http://$target_host:$target_port/login
+    ?HTTP/1.1 401 Unauthorized
+    ?WWW-Authenticate: Basic realm="Simple"
+
+
+[shell start_server]
+    !init:stop().
+
+[cleanup]

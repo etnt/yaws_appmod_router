@@ -53,8 +53,10 @@ clean:
 
 .PHONY: lux_test
 lux_test:
+	(cd test; ../deps/lux/bin/lux simple.lux)
 	(cd test; ../deps/lux/bin/lux test_crud_routing.lux)
 	(cd test; ../deps/lux/bin/lux test_advanced_routing.lux)
+	(cd test; ../deps/lux/bin/lux test_multi_routing.lux)
 
 # -----------------------
 # D E P E N D E N C I E S
