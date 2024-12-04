@@ -67,7 +67,9 @@ init([]) ->
 
 
 handle_call({add_route, TableName, Method, PathPattern, Handler, Middlewares}, _From, State) ->
-    insert_route(TableName, Method, PathPattern, Handler, Middlewares),
+    Action = method_to_action(Method),
+    Crud = undefined,
+    insert_route(TableName, Method, PathPattern, Handler, Middlewares, Crud, Action),
     {reply, ok, State};
 %%
 handle_call({add_crud_route, TableName, Method, PathPattern, Handler, Middlewares}, _From, State) ->
@@ -111,20 +113,32 @@ code_change(_OldVsn, State, _Extra) ->
 add_crud_routes(TableName, Crud, PathPattern, Handler, Middlewares) ->
     lists:foreach(
         fun($C) ->
-            insert_route(TableName, "POST", PathPattern, Handler, Middlewares, Crud, create);
+                Post = "POST",
+                Action = method_to_action(Post),
+                insert_route(TableName, Post, PathPattern, Handler, Middlewares, Crud, Action);
             ($R) ->
-                insert_route(TableName, "GET", PathPattern, Handler, Middlewares, Crud, index),
-                insert_route(TableName, "GET", PathPattern++"/:id", Handler, Middlewares, Crud, show);
+                Get = "GET",
+                Action = method_to_action(Get),
+                insert_route(TableName, Get, PathPattern, Handler, Middlewares, Crud, Action),
+                insert_route(TableName, Get, PathPattern++"/:id", Handler, Middlewares, Crud, show);
             ($U) ->
-                insert_route(TableName, "PUT", PathPattern++"/:id", Handler, Middlewares, Crud, replace),
-                insert_route(TableName, "PATCH", PathPattern++"/:id", Handler, Middlewares, Crud, modify);
+                Put = "PUT",
+                PutAction = method_to_action(Put),
+                Patch = "PATCH",
+                PatchAction = method_to_action(Patch),
+                insert_route(TableName, Put, PathPattern++"/:id", Handler, Middlewares, Crud, PutAction),
+                insert_route(TableName, Patch, PathPattern++"/:id", Handler, Middlewares, Crud, PatchAction);
             ($D) ->
-                insert_route(TableName, "DELETE", PathPattern++"/:id", Handler, Middlewares, Crud, delete)
+                Delete = "DELETE",
+                Action = method_to_action(Delete),
+                insert_route(TableName, Delete, PathPattern++"/:id", Handler, Middlewares, Crud, Action)
         end, Crud),
-    insert_route(TableName, "OPTIONS", PathPattern, undefined, [], Crud, options).
+    Options = "OPTIONS",
+    Action = method_to_action(Options),
+    insert_route(TableName, Options, PathPattern, undefined, [], Crud, Action).
 
-insert_route(TableName, Method, PathPattern, Handler, Middlewares) ->
-    insert_route(TableName, Method, PathPattern, Handler, Middlewares, _Crud = undefined, _Action = undefined).
+%%insert_route(TableName, Method, PathPattern, Handler, Middlewares) ->
+%%    insert_route(TableName, Method, PathPattern, Handler, Middlewares, _Crud = undefined, _Action = undefined).
 
 insert_route(TableName, Method, PathPattern, Handler, Middlewares, Crud, Action) ->
     Route = #route{
@@ -136,3 +150,12 @@ insert_route(TableName, Method, PathPattern, Handler, Middlewares, Crud, Action)
         middlewares = Middlewares
     },
     ets:insert(TableName, {route, Route}).
+
+%% NOTE: the (CRUD) 'show' action is missing since it also depend on the PathPattern
+method_to_action("GET")     -> index;
+method_to_action("POST")    -> create;
+method_to_action("PUT")     -> replace;
+method_to_action("PATCH")   -> modify;
+method_to_action("DELETE")  -> delete;
+method_to_action("OPTIONS") -> options;
+method_to_action(_)         -> undefined.
