@@ -25,6 +25,7 @@
 
 -include_lib("yaws/include/yaws.hrl").
 -include_lib("yaws/include/yaws_api.hrl").
+-include_lib("eunit/include/eunit.hrl").
 -include("yaws_appmod_router.hrl").
 
 -export_type([crud_operations/0,
@@ -166,20 +167,67 @@ find_route(Method, Path, TableName) ->
 match_path(Pattern, Path) ->
     PatternSegments = string:split(Pattern, "/", all),
     PathSegments = string:split(Path, "/", all),
-    case length(PatternSegments) =:= length(PathSegments) of
-        true -> match_segments(PatternSegments, PathSegments, #{});
-        false -> false
-    end.
+    match_segments(PatternSegments, PathSegments, #{}).
+
 
 %% Match individual path segments and build params map
+match_segments(["*" | _], _RestPath, Params) ->
+    {true, Params};
+%%
 match_segments([], [], Params) ->
     {true, Params};
+%%
+match_segments([[]], [], Params) ->
+    {true, Params};
+%%
 match_segments([[$: | ParamName] | RestPattern], [Value | RestPath], Params) ->
     match_segments(RestPattern, RestPath, Params#{list_to_atom(ParamName) => Value});
+%%
 match_segments([Same | RestPattern], [Same | RestPath], Params) ->
     match_segments(RestPattern, RestPath, Params);
+%%
 match_segments(_, _, _) ->
     false.
+
+-ifdef(EUNIT).
+
+match_segments_test_() ->
+    [
+     %% Basic mismatches:
+     %% "/foo/bar" - "/foo"
+     ?_assertMatch(false, match_segments(["foo", "bar"], ["foo"], #{})),
+     %% "/foo" - "/foo/bar"
+     ?_assertMatch(false, match_segments(["foo"], ["foo", "bar"], #{})),
+
+     %% Basic matches
+     %% "/foo" - "/foo"
+     ?_assertMatch({true, #{}}, match_segments(["foo"], ["foo"], #{})),
+     %% "/foo/bar" - "/foo/bar"
+     ?_assertMatch({true, #{}}, match_segments(["foo", "bar"], ["foo", "bar"], #{})),
+
+     %% Wildcard matches
+     %% "/foo/*" - "/foo/bar"
+     ?_assertMatch({true, #{}}, match_segments(["foo", "*"], ["foo", "bar"], #{})),
+     %% "/foo/*" - "/foo/bar/baz"
+     ?_assertMatch({true, #{}}, match_segments(["foo", "*"], ["foo", "bar", "baz"], #{})),
+     %% "/*" - "/foo/bar"
+     ?_assertMatch({true, #{}}, match_segments(["*"], ["foo", "bar"], #{})),
+
+     %% Parameter extraction
+     %% "/foo/:id" - "/foo/123"
+     ?_assertMatch({true, #{id := "123"}}, match_segments(["foo", [$: | "id"]], ["foo", "123"], #{})),
+     %% "/foo/:id/:name" - "/foo/123/alice"
+     ?_assertMatch({true, #{id := "123", name := "alice"}}, match_segments(["foo", [$: | "id"], [$: | "name"]], ["foo", "123", "alice"], #{})),
+
+     %% Mixed patterns
+     %% "/foo/:id/bar" - "/foo/123/bar"
+     ?_assertMatch({true, #{id := "123"}}, match_segments(["foo", [$: | "id"], "bar"], ["foo", "123", "bar"], #{})),
+     %% "/foo/:id/*" - "/foo/123/bar/baz"
+     ?_assertMatch({true, #{id := "123"}}, match_segments(["foo", [$: | "id"], "*"], ["foo", "123", "bar", "baz"], #{}))
+    ].
+
+-endif.
+
 
 %% Execute middleware chain
 execute_middlewares(Middlewares, Req) ->
