@@ -296,7 +296,7 @@ return_options(_Req, Crud) when is_list(Crud) ->
     ].
 
 http_methods() ->
-    ["GET", "POST", "PUT", "DELETE", "OPTIONS"].
+    ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"].
 
 is_http_method(Method) ->
     lists:member(Method, http_methods()).
