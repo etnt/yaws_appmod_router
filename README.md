@@ -72,7 +72,7 @@ Now start our server:
 
 ```bash
 # Start the simple example
-$ make shell
+$ make starti
 1> simple:start().
 Yaws server started on port 8080 
 ```
